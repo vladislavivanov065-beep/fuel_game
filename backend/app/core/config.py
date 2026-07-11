@@ -14,6 +14,13 @@ class Settings(BaseSettings):
 
     cors_origins: list[str] = ["http://localhost:5173"]
 
+    session_cookie_name: str = "session_id"
+    session_ttl_seconds: int = 60 * 60 * 24 * 7
+    session_cookie_secure: bool = False
+
+    auth_rate_limit_max_attempts: int = 5
+    auth_rate_limit_window_seconds: int = 60
+
 
 @lru_cache
 def get_settings() -> Settings:
