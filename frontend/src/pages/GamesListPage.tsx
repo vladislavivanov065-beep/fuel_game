@@ -52,6 +52,9 @@ export function GamesListPage() {
       <p>
         <Link to="/games/new">Create a new game</Link>
       </p>
+      <p>
+        <Link to="/map">View the map</Link>
+      </p>
 
       <h2>Join a game</h2>
       <form onSubmit={handleJoinSubmit}>
