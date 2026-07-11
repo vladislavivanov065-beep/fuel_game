@@ -14,6 +14,7 @@ from app.schemas.game import (
     GameSummaryResponse,
     InvitePreviewResponse,
     JoinGameRequest,
+    SetNetworkRequest,
     SetReadyRequest,
 )
 from app.services import game_service
@@ -196,3 +197,93 @@ async def start_game(
         {"started_at": game.started_at.isoformat() if game.started_at else None},
     )
     return GameDetailResponse.from_model(game)
+
+
+async def _set_network(
+    game_id: uuid.UUID,
+    data: SetNetworkRequest,
+    user: User,
+    db: AsyncSession,
+) -> GamePlayerResponse:
+    try:
+        player = await game_service.set_network(
+            db, game_id, user.id, data.network_name, data.network_color
+        )
+    except game_service.NotAGameMemberError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN, detail="You are not a member of this game"
+        ) from exc
+    except game_service.NetworkNameTakenError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="This network name is already taken in this game",
+        ) from exc
+
+    await connection_manager.broadcast(
+        game_id,
+        "player.updated",
+        {
+            "user_id": str(user.id),
+            "network_name": player.network_name,
+            "network_color": player.network_color,
+        },
+    )
+    return GamePlayerResponse(
+        id=player.id,
+        user_id=player.user_id,
+        display_name=user.display_name,
+        network_name=player.network_name,
+        network_color=player.network_color,
+        balance=player.balance,
+        net_worth=player.net_worth,
+        is_ready=player.is_ready,
+        is_admin=player.is_admin,
+        joined_at=player.joined_at,
+    )
+
+
+@router.post("/{game_id}/network", response_model=GamePlayerResponse)
+async def create_network(
+    game_id: uuid.UUID,
+    data: SetNetworkRequest,
+    user: Annotated[User, Depends(require_current_user)],
+    db: Annotated[AsyncSession, Depends(get_db_session)],
+) -> GamePlayerResponse:
+    return await _set_network(game_id, data, user, db)
+
+
+@router.patch("/{game_id}/network", response_model=GamePlayerResponse)
+async def update_network(
+    game_id: uuid.UUID,
+    data: SetNetworkRequest,
+    user: Annotated[User, Depends(require_current_user)],
+    db: Annotated[AsyncSession, Depends(get_db_session)],
+) -> GamePlayerResponse:
+    return await _set_network(game_id, data, user, db)
+
+
+@router.get("/{game_id}/network", response_model=GamePlayerResponse)
+async def get_network(
+    game_id: uuid.UUID,
+    user: Annotated[User, Depends(require_current_user)],
+    db: Annotated[AsyncSession, Depends(get_db_session)],
+) -> GamePlayerResponse:
+    try:
+        player = await game_service.get_network(db, game_id, user.id)
+    except game_service.NotAGameMemberError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN, detail="You are not a member of this game"
+        ) from exc
+
+    return GamePlayerResponse(
+        id=player.id,
+        user_id=player.user_id,
+        display_name=user.display_name,
+        network_name=player.network_name,
+        network_color=player.network_color,
+        balance=player.balance,
+        net_worth=player.net_worth,
+        is_ready=player.is_ready,
+        is_admin=player.is_admin,
+        joined_at=player.joined_at,
+    )

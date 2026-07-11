@@ -1,6 +1,7 @@
 import { Navigate, Route, Routes } from 'react-router-dom'
 import { ProtectedRoute } from './components/ProtectedRoute'
 import { CreateGamePage } from './pages/CreateGamePage'
+import { GameMapPage } from './pages/GameMapPage'
 import { GamesListPage } from './pages/GamesListPage'
 import { HealthPage } from './pages/HealthPage'
 import { JoinGamePage } from './pages/JoinGamePage'
@@ -19,6 +20,7 @@ function App() {
         <Route path="/" element={<GamesListPage />} />
         <Route path="/games/new" element={<CreateGamePage />} />
         <Route path="/games/:gameId" element={<LobbyPage />} />
+        <Route path="/games/:gameId/map" element={<GameMapPage />} />
         <Route path="/join/:inviteCode" element={<JoinGamePage />} />
         <Route path="/map" element={<MapPage />} />
       </Route>

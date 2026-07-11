@@ -1,8 +1,8 @@
 import { useQuery, useQueryClient } from '@tanstack/react-query'
-import { useState } from 'react'
-import { useNavigate, useParams } from 'react-router-dom'
+import { type FormEvent, useState } from 'react'
+import { Link, useNavigate, useParams } from 'react-router-dom'
 import { ApiError } from '../api/client'
-import { getGame, leaveGame, setReady, startGame } from '../api/games'
+import { getGame, leaveGame, setNetwork, setReady, startGame } from '../api/games'
 import { useAuthStore } from '../stores/authStore'
 import { useGameSocket } from '../websocket/useGameSocket'
 
@@ -13,6 +13,8 @@ export function LobbyPage() {
   const user = useAuthStore((s) => s.user)
   const [error, setError] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
+  const [networkName, setNetworkName] = useState('')
+  const [networkColor, setNetworkColor] = useState('#3366ff')
 
   const {
     data: game,
@@ -70,6 +72,21 @@ export function LobbyPage() {
     }
   }
 
+  async function handleSetNetwork(event: FormEvent): Promise<void> {
+    event.preventDefault()
+    if (!gameId) return
+    setBusy(true)
+    setError(null)
+    try {
+      await setNetwork(gameId, networkName, networkColor)
+      await queryClient.invalidateQueries({ queryKey: ['game', gameId] })
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : 'Failed to set network name')
+    } finally {
+      setBusy(false)
+    }
+  }
+
   if (isLoading) {
     return (
       <main>
@@ -101,9 +118,47 @@ export function LobbyPage() {
             {player.display_name}
             {player.is_admin ? ' (creator)' : ''} — {player.is_ready ? 'ready' : 'not ready'} —
             balance: {player.balance}
+            {player.network_name && (
+              <>
+                {' — network: '}
+                <span style={{ color: player.network_color ?? undefined }}>
+                  {player.network_name}
+                </span>
+              </>
+            )}
           </li>
         ))}
       </ul>
+
+      {me && (
+        <>
+          <h2>Your network</h2>
+          <form onSubmit={(e) => void handleSetNetwork(e)}>
+            <label>
+              Name
+              <input
+                type="text"
+                value={networkName}
+                onChange={(e) => setNetworkName(e.target.value)}
+                placeholder={me.network_name ?? 'Network name'}
+                required
+                maxLength={64}
+              />
+            </label>
+            <label>
+              Color
+              <input
+                type="color"
+                value={networkColor}
+                onChange={(e) => setNetworkColor(e.target.value)}
+              />
+            </label>
+            <button type="submit" disabled={busy}>
+              Save network
+            </button>
+          </form>
+        </>
+      )}
 
       {game.status === 'lobby' && me && (
         <button type="button" onClick={() => void handleToggleReady()} disabled={busy}>
@@ -115,6 +170,12 @@ export function LobbyPage() {
         <button type="button" onClick={() => void handleStart()} disabled={busy}>
           Start game
         </button>
+      )}
+
+      {game.status === 'running' && (
+        <p>
+          <Link to={`/games/${gameId}/map`}>Open game map</Link>
+        </p>
       )}
 
       {me && !me.is_admin && (

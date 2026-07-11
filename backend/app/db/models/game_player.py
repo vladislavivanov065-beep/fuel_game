@@ -16,7 +16,10 @@ if TYPE_CHECKING:
 
 class GamePlayer(Base):
     __tablename__ = "game_players"
-    __table_args__ = (UniqueConstraint("game_id", "user_id", name="uq_game_players_game_user"),)
+    __table_args__ = (
+        UniqueConstraint("game_id", "user_id", name="uq_game_players_game_user"),
+        UniqueConstraint("game_id", "network_name", name="uq_game_players_game_network_name"),
+    )
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     game_id: Mapped[uuid.UUID] = mapped_column(

@@ -26,6 +26,11 @@ class SetReadyRequest(BaseModel):
     is_ready: bool
 
 
+class SetNetworkRequest(BaseModel):
+    network_name: str = Field(min_length=1, max_length=64)
+    network_color: str = Field(pattern=r"^#[0-9A-Fa-f]{6}$")
+
+
 class GamePlayerResponse(BaseModel):
     id: uuid.UUID
     user_id: uuid.UUID

@@ -103,3 +103,18 @@ export function setReady(gameId: string, isReady: boolean): Promise<GamePlayer> 
 export function startGame(gameId: string): Promise<GameDetail> {
   return apiRequest<GameDetail>(`/api/games/${gameId}/start`, { method: 'POST' })
 }
+
+export function setNetwork(
+  gameId: string,
+  networkName: string,
+  networkColor: string,
+): Promise<GamePlayer> {
+  return apiRequest<GamePlayer>(`/api/games/${gameId}/network`, {
+    method: 'POST',
+    body: JSON.stringify({ network_name: networkName, network_color: networkColor }),
+  })
+}
+
+export function getNetwork(gameId: string): Promise<GamePlayer> {
+  return apiRequest<GamePlayer>(`/api/games/${gameId}/network`)
+}

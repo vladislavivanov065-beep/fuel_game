@@ -11,6 +11,7 @@ from app.db.models.game_player import GamePlayer
 from app.db.models.game_room import GameRoom, GameStatus
 from app.schemas.game import CreateGameRequest
 from app.schemas.game_settings import GameSettings
+from app.services import station_service
 
 _INVITE_CODE_ALPHABET = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"
 _INVITE_CODE_LENGTH = 8
@@ -50,6 +51,10 @@ class NotGameCreatorError(Exception):
 
 
 class GameAlreadyStartedError(Exception):
+    pass
+
+
+class NetworkNameTakenError(Exception):
     pass
 
 
@@ -178,6 +183,34 @@ async def set_ready(
     return player
 
 
+async def set_network(
+    db: AsyncSession, game_id: uuid.UUID, user_id: uuid.UUID, network_name: str, network_color: str
+) -> GamePlayer:
+    stmt = select(GamePlayer).where(GamePlayer.game_id == game_id, GamePlayer.user_id == user_id)
+    player = (await db.execute(stmt)).scalar_one_or_none()
+    if player is None:
+        raise NotAGameMemberError
+
+    player.network_name = network_name
+    player.network_color = network_color
+    try:
+        await db.commit()
+    except IntegrityError as exc:
+        await db.rollback()
+        raise NetworkNameTakenError from exc
+
+    await db.refresh(player)
+    return player
+
+
+async def get_network(db: AsyncSession, game_id: uuid.UUID, user_id: uuid.UUID) -> GamePlayer:
+    stmt = select(GamePlayer).where(GamePlayer.game_id == game_id, GamePlayer.user_id == user_id)
+    player = (await db.execute(stmt)).scalar_one_or_none()
+    if player is None:
+        raise NotAGameMemberError
+    return player
+
+
 async def start_game(db: AsyncSession, game_id: uuid.UUID, user_id: uuid.UUID) -> GameRoom:
     game = (await db.execute(select(GameRoom).where(GameRoom.id == game_id))).scalar_one_or_none()
     if game is None:
@@ -204,6 +237,7 @@ async def start_game(db: AsyncSession, game_id: uuid.UUID, user_id: uuid.UUID) -
         .where(GamePlayer.game_id == game_id)
         .values(balance=room_settings.starting_balance)
     )
+    await station_service.create_game_stations_for_game(db, game_id, room_settings)
     await db.commit()
 
     return await get_game_for_member(db, game_id, user_id)
