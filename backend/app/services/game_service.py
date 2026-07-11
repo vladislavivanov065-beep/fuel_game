@@ -12,7 +12,7 @@ from app.db.models.game_player import GamePlayer
 from app.db.models.game_room import GameRoom, GameStatus
 from app.schemas.game import CreateGameRequest
 from app.schemas.game_settings import GameSettings
-from app.services import station_service
+from app.services import refinery_service, station_service
 
 _INVITE_CODE_ALPHABET = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"
 _INVITE_CODE_LENGTH = 8
@@ -252,6 +252,7 @@ async def start_game(db: AsyncSession, game_id: uuid.UUID, user_id: uuid.UUID) -
         .values(balance=room_settings.starting_balance)
     )
     await station_service.create_game_stations_for_game(db, game_id, room_settings)
+    await refinery_service.create_refinery_fuels_for_game(db, game_id, room_settings)
     await db.commit()
 
     return await get_game_for_member(db, game_id, user_id)

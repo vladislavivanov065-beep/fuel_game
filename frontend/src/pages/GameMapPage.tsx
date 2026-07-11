@@ -5,6 +5,7 @@ import { Link, useParams } from 'react-router-dom'
 import { MapContainer, Marker, Popup, TileLayer } from 'react-leaflet'
 import { ApiError } from '../api/client'
 import { listMyTransactions } from '../api/finance'
+import { createFuelOrder, listFuelOrders } from '../api/fuelOrders'
 import { getGame } from '../api/games'
 import {
   type FuelType,
@@ -14,6 +15,8 @@ import {
   setNetworkPrice,
   setStationPrice,
 } from '../api/gameStations'
+import { listGameRefineries } from '../api/refineries'
+import { FuelOrdersPanel } from '../components/FuelOrdersPanel'
 import { IncomeChart } from '../components/IncomeChart'
 import {
   MARI_EL_BOUNDS,
@@ -21,7 +24,7 @@ import {
   MARI_EL_DEFAULT_ZOOM,
   MARI_EL_MIN_ZOOM,
 } from '../map/bounds'
-import { ownedStationIcon, stationIcon } from '../map/icons'
+import { ownedStationIcon, refineryIcon, stationIcon } from '../map/icons'
 import { useAuthStore } from '../stores/authStore'
 import { useGameSocket } from '../websocket/useGameSocket'
 
@@ -149,6 +152,88 @@ function NetworkPriceEditor({ gameId, onSaved }: { gameId: string; onSaved: () =
   )
 }
 
+function RefineryOrderForm({
+  gameId,
+  refineryId,
+  myStations,
+  onOrdered,
+}: {
+  gameId: string
+  refineryId: string
+  myStations: GameStation[]
+  onOrdered: () => void
+}) {
+  const [stationId, setStationId] = useState(myStations[0]?.id ?? '')
+  const [fuelType, setFuelType] = useState<FuelType>('ai92')
+  const [liters, setLiters] = useState('')
+  const [busy, setBusy] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+  const [message, setMessage] = useState<string | null>(null)
+
+  async function handleSubmit(): Promise<void> {
+    if (!stationId || !liters) return
+    setBusy(true)
+    setError(null)
+    setMessage(null)
+    try {
+      await createFuelOrder(gameId, {
+        refinery_id: refineryId,
+        station_id: stationId,
+        fuel_type: fuelType,
+        liters,
+      })
+      setMessage('Заказ оформлен')
+      setLiters('')
+      onOrdered()
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : 'Failed to create fuel order')
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  if (myStations.length === 0) {
+    return <p style={{ fontSize: 12 }}>У вас пока нет своих АЗС.</p>
+  }
+
+  return (
+    <div style={{ marginTop: 8 }}>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+        <select value={stationId} onChange={(e) => setStationId(e.target.value)}>
+          {myStations.map((station) => (
+            <option key={station.id} value={station.id}>
+              {station.name}
+            </option>
+          ))}
+        </select>
+        <select value={fuelType} onChange={(e) => setFuelType(e.target.value as FuelType)}>
+          {Object.entries(FUEL_LABELS).map(([value, label]) => (
+            <option key={value} value={value}>
+              {label}
+            </option>
+          ))}
+        </select>
+        <input
+          type="number"
+          step="1"
+          placeholder="Литры"
+          value={liters}
+          onChange={(e) => setLiters(e.target.value)}
+        />
+        <button type="button" onClick={() => void handleSubmit()} disabled={busy || !liters}>
+          {busy ? 'Заказываю...' : 'Заказать топливо'}
+        </button>
+      </div>
+      {message && <p style={{ fontSize: 12, color: 'var(--text)' }}>{message}</p>}
+      {error && (
+        <p role="alert" style={{ fontSize: 12, color: 'crimson' }}>
+          {error}
+        </p>
+      )}
+    </div>
+  )
+}
+
 export function GameMapPage() {
   const { gameId } = useParams<{ gameId: string }>()
   const queryClient = useQueryClient()
@@ -174,8 +259,21 @@ export function GameMapPage() {
     enabled: Boolean(gameId),
   })
 
+  const { data: refineries } = useQuery({
+    queryKey: ['refineries', gameId],
+    queryFn: () => listGameRefineries(gameId ?? ''),
+    enabled: Boolean(gameId),
+  })
+
+  const { data: fuelOrders } = useQuery({
+    queryKey: ['fuelOrders', gameId],
+    queryFn: () => listFuelOrders(gameId ?? ''),
+    enabled: Boolean(gameId),
+  })
+
   const myPlayerId = game?.players.find((p) => p.user_id === user?.id)?.id
   const ownsAnyStation = stations?.some((s) => s.owner_player_id === myPlayerId) ?? false
+  const myStations = stations?.filter((s) => s.owner_player_id === myPlayerId) ?? []
 
   useGameSocket(gameId, (event) => {
     if (
@@ -191,7 +289,19 @@ export function GameMapPage() {
       void queryClient.invalidateQueries({ queryKey: ['game', gameId] })
       void queryClient.invalidateQueries({ queryKey: ['transactions', gameId] })
     }
+    if (event.event === 'fuel_order.created' || event.event === 'fuel_order.delivered') {
+      void queryClient.invalidateQueries({ queryKey: ['fuelOrders', gameId] })
+      void queryClient.invalidateQueries({ queryKey: ['gameStations', gameId] })
+      void queryClient.invalidateQueries({ queryKey: ['refineries', gameId] })
+      void queryClient.invalidateQueries({ queryKey: ['game', gameId] })
+    }
   })
+
+  function refreshAfterOrder(): void {
+    void queryClient.invalidateQueries({ queryKey: ['fuelOrders', gameId] })
+    void queryClient.invalidateQueries({ queryKey: ['refineries', gameId] })
+    void queryClient.invalidateQueries({ queryKey: ['game', gameId] })
+  }
 
   function refreshAfterPriceChange(): void {
     void queryClient.invalidateQueries({ queryKey: ['gameStations', gameId] })
@@ -232,6 +342,32 @@ export function GameMapPage() {
             attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
             url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
           />
+          {refineries?.map((refinery) => (
+            <Marker
+              key={refinery.id}
+              position={[refinery.latitude, refinery.longitude]}
+              icon={refineryIcon}
+            >
+              <Popup>
+                <strong>{refinery.name}</strong>
+                <br />
+                {refinery.fuels.map((fuel) => (
+                  <span key={fuel.fuel_type} style={{ display: 'block' }}>
+                    {FUEL_LABELS[fuel.fuel_type]}: {fuel.current_liters} л по {fuel.purchase_price}{' '}
+                    ₽/л
+                  </span>
+                ))}
+                {gameId && (
+                  <RefineryOrderForm
+                    gameId={gameId}
+                    refineryId={refinery.id}
+                    myStations={myStations}
+                    onOrdered={refreshAfterOrder}
+                  />
+                )}
+              </Popup>
+            </Marker>
+          ))}
           {stations?.map((station) => {
             const isOwnedByMe =
               myPlayerId !== undefined && station.owner_player_id === myPlayerId
@@ -285,6 +421,8 @@ export function GameMapPage() {
       {gameId && ownsAnyStation && (
         <NetworkPriceEditor gameId={gameId} onSaved={refreshAfterPriceChange} />
       )}
+
+      {fuelOrders && <FuelOrdersPanel orders={fuelOrders} stations={stations ?? []} />}
 
       {transactions && <IncomeChart transactions={transactions} />}
     </main>

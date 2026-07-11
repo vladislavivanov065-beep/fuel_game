@@ -8,6 +8,7 @@ from sqlalchemy import select
 from app.db.models.game_room import GameRoom, GameStatus
 from app.db.session import async_session_factory
 from app.schemas.game_settings import GameSettings
+from app.services import fuel_order_service
 from app.simulation import economy
 from app.websocket.connection_manager import connection_manager
 
@@ -49,14 +50,16 @@ async def _broadcast_tick_result(game_id: uuid.UUID, result: economy.EconomicTic
     )
 
 
-async def _due_game_ids(now: datetime) -> list[uuid.UUID]:
+async def _running_games() -> list[GameRoom]:
     async with async_session_factory() as db:
-        games = (
+        return list(
             (await db.execute(select(GameRoom).where(GameRoom.status == GameStatus.RUNNING)))
             .scalars()
             .all()
         )
 
+
+def _due_game_ids(games: list[GameRoom], now: datetime) -> list[uuid.UUID]:
     due: list[uuid.UUID] = []
     for game in games:
         interval = GameSettings.model_validate(game.settings_json).economic_tick_interval_seconds
@@ -66,9 +69,39 @@ async def _due_game_ids(now: datetime) -> list[uuid.UUID]:
     return due
 
 
+async def _broadcast_delivered_orders(
+    game_id: uuid.UUID, delivered: list[fuel_order_service.DeliveredOrderResult]
+) -> None:
+    for order in delivered:
+        await connection_manager.broadcast(
+            game_id,
+            "fuel_order.delivered",
+            {
+                "order_id": str(order.order_id),
+                "player_id": str(order.player_id),
+                "station_id": str(order.station_id),
+                "fuel_type": order.fuel_type.value,
+                "liters": str(order.liters),
+            },
+        )
+
+
+async def _deliver_fuel_orders(game_id: uuid.UUID) -> None:
+    async with async_session_factory() as db:
+        try:
+            delivered = await fuel_order_service.deliver_due_fuel_orders(db, game_id)
+        except Exception:
+            logger.exception("Fuel order delivery failed for game %s", game_id)
+            return
+
+    await _broadcast_delivered_orders(game_id, delivered)
+
+
 async def _run_tick_cycle() -> None:
     now = datetime.now(UTC)
-    for game_id in await _due_game_ids(now):
+    games = await _running_games()
+
+    for game_id in _due_game_ids(games, now):
         async with async_session_factory() as db:
             try:
                 result = await economy.run_economic_tick_for_game(db, game_id)
@@ -80,6 +113,9 @@ async def _run_tick_cycle() -> None:
 
         _last_tick_at[game_id] = datetime.now(UTC)
         await _broadcast_tick_result(game_id, result)
+
+    for game in games:
+        await _deliver_fuel_orders(game.id)
 
 
 async def _run_forever() -> None:

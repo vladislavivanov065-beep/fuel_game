@@ -45,6 +45,15 @@ class GameSettings(BaseModel):
     reference_fuel_price_per_liter: Decimal = Field(default=Decimal("55.00"), gt=0)
     economic_tick_interval_seconds: int = Field(default=8, gt=0)
 
+    base_delivery_fee: Decimal = Field(default=Decimal("2000.00"), ge=0)
+    delivery_cost_per_km: Decimal = Field(default=Decimal("15.00"), ge=0)
+    fuel_truck_capacity_liters: Decimal = Field(default=Decimal("16000.00"), gt=0)
+    refinery_starting_stock_liters: Decimal = Field(default=Decimal("500000.00"), ge=0)
+    refinery_loading_speed_liters_per_minute: float = Field(default=2000.0, gt=0)
+    refinery_ai92_purchase_price: Decimal = Field(default=Decimal("42.00"), gt=0)
+    refinery_ai95_purchase_price: Decimal = Field(default=Decimal("45.00"), gt=0)
+    refinery_diesel_purchase_price: Decimal = Field(default=Decimal("47.00"), gt=0)
+
     @model_validator(mode="after")
     def _check_price_bounds(self) -> Self:
         if self.min_retail_price_per_liter >= self.max_retail_price_per_liter:
