@@ -20,6 +20,7 @@ from app.db.base import Base
 
 if TYPE_CHECKING:
     from app.db.models.game_player import GamePlayer
+    from app.db.models.station_fuel import StationFuel
     from app.db.models.station_template import StationTemplate
 
 STATION_STATUS_ACTIVE = "active"
@@ -53,3 +54,4 @@ class GameStation(Base):
 
     station_template: Mapped["StationTemplate"] = relationship()
     owner: Mapped["GamePlayer | None"] = relationship()
+    fuels: Mapped[list["StationFuel"]] = relationship()

@@ -1,4 +1,5 @@
 from app.db.models.financial_transaction import FinancialTransaction
+from app.db.models.fuel_sale import FuelSale
 from app.db.models.game_player import GamePlayer
 from app.db.models.game_room import GameRoom, GameStatus
 from app.db.models.game_station import GameStation
@@ -9,6 +10,7 @@ from app.db.models.user import User
 
 __all__ = [
     "FinancialTransaction",
+    "FuelSale",
     "FuelType",
     "GamePlayer",
     "GameRoom",

@@ -7,6 +7,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
+from app.db.models.financial_transaction import FinancialTransaction
 from app.db.models.game_player import GamePlayer
 from app.db.models.game_room import GameRoom, GameStatus
 from app.schemas.game import CreateGameRequest
@@ -209,6 +210,19 @@ async def get_network(db: AsyncSession, game_id: uuid.UUID, user_id: uuid.UUID) 
     if player is None:
         raise NotAGameMemberError
     return player
+
+
+async def list_my_transactions(
+    db: AsyncSession, game_id: uuid.UUID, user_id: uuid.UUID
+) -> list[FinancialTransaction]:
+    player = await get_network(db, game_id, user_id)
+
+    stmt = (
+        select(FinancialTransaction)
+        .where(FinancialTransaction.player_id == player.id)
+        .order_by(FinancialTransaction.created_at)
+    )
+    return list((await db.execute(stmt)).scalars().all())
 
 
 async def start_game(db: AsyncSession, game_id: uuid.UUID, user_id: uuid.UUID) -> GameRoom:

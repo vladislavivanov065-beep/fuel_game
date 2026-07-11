@@ -151,7 +151,10 @@ async def test_create_game_stations_for_game_creates_station_and_fuel_rows(
         .all()
     )
     assert len(fuels) == 6
-    assert all(fuel.current_liters == 0 for fuel in fuels)
+    expected_starting_liters = GameSettings().starting_station_capacity_liters * Decimal(
+        str(GameSettings().starting_fuel_fill_ratio)
+    )
+    assert all(fuel.current_liters == expected_starting_liters for fuel in fuels)
 
 
 async def test_purchase_station_succeeds_and_records_transaction() -> None:

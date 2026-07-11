@@ -1,8 +1,9 @@
 import enum
 import uuid
+from datetime import datetime
 from decimal import Decimal
 
-from sqlalchemy import Enum, ForeignKey, Numeric, UniqueConstraint
+from sqlalchemy import DateTime, Enum, ForeignKey, Numeric, UniqueConstraint
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -44,4 +45,7 @@ class StationFuel(Base):
     retail_price: Mapped[Decimal] = mapped_column(Numeric(8, 2), nullable=False)
     average_purchase_price: Mapped[Decimal] = mapped_column(
         Numeric(8, 2), default=Decimal("0"), nullable=False
+    )
+    price_updated_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
     )
