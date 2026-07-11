@@ -5,6 +5,7 @@ import { GamesListPage } from './pages/GamesListPage'
 import { HealthPage } from './pages/HealthPage'
 import { JoinGamePage } from './pages/JoinGamePage'
 import { LobbyPage } from './pages/LobbyPage'
+import { MapPage } from './pages/MapPage'
 import { LoginPage } from './pages/LoginPage'
 import { RegisterPage } from './pages/RegisterPage'
 
@@ -19,6 +20,7 @@ function App() {
         <Route path="/games/new" element={<CreateGamePage />} />
         <Route path="/games/:gameId" element={<LobbyPage />} />
         <Route path="/join/:inviteCode" element={<JoinGamePage />} />
+        <Route path="/map" element={<MapPage />} />
       </Route>
       <Route path="*" element={<Navigate to="/" replace />} />
     </Routes>
