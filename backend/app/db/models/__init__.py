@@ -2,6 +2,7 @@ from app.db.models.financial_transaction import FinancialTransaction
 from app.db.models.fuel_order import FuelOrder, FuelOrderStatus
 from app.db.models.fuel_order_stop import FuelOrderStop, FuelOrderStopStatus
 from app.db.models.fuel_sale import FuelSale
+from app.db.models.game_event import EventStatus, EventType, GameEvent
 from app.db.models.game_player import GamePlayer
 from app.db.models.game_room import GameRoom, GameStatus
 from app.db.models.game_station import GameStation
@@ -18,6 +19,8 @@ from app.db.models.vehicle import DriverType, Vehicle, VehicleStatus
 
 __all__ = [
     "DriverType",
+    "EventStatus",
+    "EventType",
     "FinancialTransaction",
     "FuelOrder",
     "FuelOrderStatus",
@@ -25,6 +28,7 @@ __all__ = [
     "FuelOrderStopStatus",
     "FuelSale",
     "FuelType",
+    "GameEvent",
     "GamePlayer",
     "GameRoom",
     "GameStation",

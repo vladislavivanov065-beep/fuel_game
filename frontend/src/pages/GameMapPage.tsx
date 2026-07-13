@@ -2,8 +2,9 @@ import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { useEffect, useState } from 'react'
 import 'leaflet/dist/leaflet.css'
 import { Link, useParams } from 'react-router-dom'
-import { MapContainer, Marker, Popup, TileLayer } from 'react-leaflet'
+import { Circle, MapContainer, Marker, Popup, TileLayer } from 'react-leaflet'
 import { ApiError } from '../api/client'
+import { type EventRegion, listActiveEvents } from '../api/events'
 import { listMyTransactions } from '../api/finance'
 import { createFuelOrder, listFuelOrders } from '../api/fuelOrders'
 import { getGame } from '../api/games'
@@ -18,6 +19,7 @@ import {
 import { listGameRefineries } from '../api/refineries'
 import { interpolateTruckPosition, listTrucks, type Truck } from '../api/trucks'
 import { interpolateVehiclePosition, listVehicles, type Vehicle } from '../api/vehicles'
+import { EventsPanel } from '../components/EventsPanel'
 import { FuelOrdersPanel } from '../components/FuelOrdersPanel'
 import { IncomeChart } from '../components/IncomeChart'
 import { StationUpgradesPanel } from '../components/StationUpgradesPanel'
@@ -409,7 +411,15 @@ export function GameMapPage() {
     refetchInterval: 5000,
   })
 
+  const { data: activeEvents } = useQuery({
+    queryKey: ['events', gameId],
+    queryFn: () => listActiveEvents(gameId ?? ''),
+    enabled: Boolean(gameId),
+    refetchInterval: 5000,
+  })
+
   const myPlayerId = game?.players.find((p) => p.user_id === user?.id)?.id
+  const isAdmin = game?.players.find((p) => p.user_id === user?.id)?.is_admin ?? false
   const ownsAnyStation = stations?.some((s) => s.owner_player_id === myPlayerId) ?? false
   const myStations = stations?.filter((s) => s.owner_player_id === myPlayerId) ?? []
 
@@ -457,6 +467,13 @@ export function GameMapPage() {
       void queryClient.invalidateQueries({ queryKey: ['stationUpgrades', gameId] })
       void queryClient.invalidateQueries({ queryKey: ['gameStations', gameId] })
       void queryClient.invalidateQueries({ queryKey: ['game', gameId] })
+    }
+    if (event.event === 'game_event.started' || event.event === 'game_event.ended') {
+      void queryClient.invalidateQueries({ queryKey: ['events', gameId] })
+      void queryClient.invalidateQueries({ queryKey: ['eventHistory', gameId] })
+      void queryClient.invalidateQueries({ queryKey: ['gameStations', gameId] })
+      void queryClient.invalidateQueries({ queryKey: ['game', gameId] })
+      void queryClient.invalidateQueries({ queryKey: ['transactions', gameId] })
     }
   })
 
@@ -507,6 +524,16 @@ export function GameMapPage() {
           />
           <TruckMarkers trucks={trucks ?? []} />
           <VehicleMarkers vehicles={vehicles ?? []} />
+          {activeEvents
+            ?.filter((event): event is typeof event & { region: EventRegion } => Boolean(event.region))
+            .map((event) => (
+              <Circle
+                key={event.id}
+                center={[event.region.latitude, event.region.longitude]}
+                radius={event.region.radius_km * 1000}
+                pathOptions={{ color: '#d97706', fillColor: '#d97706', fillOpacity: 0.15 }}
+              />
+            ))}
           {refineries?.map((refinery) => (
             <Marker
               key={refinery.id}
@@ -585,6 +612,8 @@ export function GameMapPage() {
           })}
         </MapContainer>
       </div>
+
+      {gameId && <EventsPanel gameId={gameId} isAdmin={isAdmin} />}
 
       {gameId && ownsAnyStation && (
         <NetworkPriceEditor gameId={gameId} onSaved={refreshAfterPriceChange} />

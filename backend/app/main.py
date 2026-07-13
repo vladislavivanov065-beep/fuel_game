@@ -5,6 +5,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.api.auth import router as auth_router
+from app.api.events import router as events_router
 from app.api.fuel_orders import router as fuel_orders_router
 from app.api.games import router as games_router
 from app.api.health import router as health_router
@@ -42,4 +43,5 @@ app.include_router(stations_router)
 app.include_router(map_router)
 app.include_router(fuel_orders_router)
 app.include_router(vehicles_router)
+app.include_router(events_router)
 app.include_router(game_ws_router)

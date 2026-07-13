@@ -8,6 +8,7 @@ from app.db.models.financial_transaction import FinancialTransaction
 from app.db.models.fuel_order import FuelOrder
 from app.db.models.fuel_order_stop import FuelOrderStop
 from app.db.models.fuel_sale import FuelSale
+from app.db.models.game_event import GameEvent
 from app.db.models.game_player import GamePlayer
 from app.db.models.game_room import GameRoom
 from app.db.models.game_station import GameStation
@@ -51,6 +52,7 @@ async def _wipe_database() -> None:
         await db.execute(delete(GameStation))
         await db.execute(delete(RefineryFuel))
         await db.execute(delete(GamePlayer))
+        await db.execute(delete(GameEvent))
         await db.execute(delete(GameRoom))
         await db.execute(delete(StationTemplate))
         await db.execute(delete(Refinery))

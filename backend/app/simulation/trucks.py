@@ -15,7 +15,7 @@ from app.db.models.game_station import GameStation
 from app.db.models.road_edge import RoadEdge
 from app.db.models.station_fuel import FuelType, StationFuel
 from app.db.models.truck import Truck, TruckStatus
-from app.services import routing_service
+from app.services import event_service, routing_service
 
 
 @dataclass(frozen=True)
@@ -60,6 +60,7 @@ async def _reroute_truck(
     current_latitude: float,
     current_longitude: float,
     remaining_stop_positions: list[int],
+    traffic_multiplier: float,
 ) -> None:
     """Rebuild the truck's route from its current position, skipping closed roads."""
     stops = (
@@ -69,7 +70,7 @@ async def _reroute_truck(
     ).scalars()
     stops_by_position = {stop.position: stop for stop in stops}
 
-    nodes, edges = await routing_service.load_graph(db)
+    nodes, edges = await routing_service.load_graph(db, traffic_multiplier=traffic_multiplier)
     start_node = routing_service.find_nearest_node(nodes, current_latitude, current_longitude)
 
     station_ids = [stops_by_position[position].station_id for position in remaining_stop_positions]
@@ -109,6 +110,7 @@ async def update_trucks_for_game(db: AsyncSession, game_id: uuid.UUID) -> TruckT
     the client only needs a periodic correction, not a stream of coordinates.
     """
     now = datetime.now(UTC)
+    event_modifiers, _ = await event_service.get_active_event_effects(db, game_id)
     trucks = (
         await db.execute(
             select(Truck).where(Truck.game_id == game_id, Truck.status == TruckStatus.EN_ROUTE)
@@ -149,7 +151,12 @@ async def update_trucks_for_game(db: AsyncSession, game_id: uuid.UUID) -> TruckT
                 if remaining_positions:
                     try:
                         await _reroute_truck(
-                            db, truck, current_lat, current_lon, remaining_positions
+                            db,
+                            truck,
+                            current_lat,
+                            current_lon,
+                            remaining_positions,
+                            event_modifiers.traffic_multiplier,
                         )
                         rerouted_truck_ids.append(truck.id)
                         updated_truck_ids.append(truck.id)

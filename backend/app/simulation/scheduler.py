@@ -10,7 +10,7 @@ from app.db.models.truck import Truck
 from app.db.models.vehicle import Vehicle
 from app.db.session import async_session_factory
 from app.schemas.game_settings import GameSettings
-from app.simulation import economy, station_upgrades, trucks, vehicles
+from app.simulation import economy, events, station_upgrades, trucks, vehicles
 from app.websocket.connection_manager import connection_manager
 
 logger = logging.getLogger(__name__)
@@ -23,6 +23,7 @@ _task: asyncio.Task[None] | None = None
 _last_tick_at: dict[uuid.UUID, datetime] = {}
 _last_truck_broadcast_at: dict[uuid.UUID, datetime] = {}
 _last_vehicle_broadcast_at: dict[uuid.UUID, datetime] = {}
+_last_event_check_at: dict[uuid.UUID, datetime] = {}
 
 
 async def _broadcast_tick_result(game_id: uuid.UUID, result: economy.EconomicTickResult) -> None:
@@ -229,6 +230,49 @@ async def _update_station_upgrades(game_id: uuid.UUID) -> None:
         await _broadcast_upgrade_tick(game_id, result)
 
 
+def _due_for_event_check(games: list[GameRoom], now: datetime) -> list[uuid.UUID]:
+    due: list[uuid.UUID] = []
+    for game in games:
+        interval = GameSettings.model_validate(game.settings_json).event_check_interval_seconds
+        last = _last_event_check_at.get(game.id)
+        if last is None or (now - last).total_seconds() >= interval:
+            due.append(game.id)
+    return due
+
+
+async def _roll_event(game_id: uuid.UUID) -> None:
+    async with async_session_factory() as db:
+        try:
+            event = await events.roll_random_event_for_game(db, game_id)
+        except Exception:
+            logger.exception("Event roll failed for game %s", game_id)
+            return
+
+    if event is not None:
+        await connection_manager.broadcast(
+            game_id,
+            "game_event.started",
+            {
+                "event_id": str(event.id),
+                "event_type": event.event_type.value,
+                "region": event.region_json,
+                "ends_at": event.ends_at.isoformat(),
+            },
+        )
+
+
+async def _expire_events(game_id: uuid.UUID) -> None:
+    async with async_session_factory() as db:
+        try:
+            expired_ids = await events.expire_due_events_for_game(db, game_id)
+        except Exception:
+            logger.exception("Event expiry failed for game %s", game_id)
+            return
+
+    for event_id in expired_ids:
+        await connection_manager.broadcast(game_id, "game_event.ended", {"event_id": str(event_id)})
+
+
 async def _run_tick_cycle() -> None:
     now = datetime.now(UTC)
     games = await _running_games()
@@ -246,10 +290,15 @@ async def _run_tick_cycle() -> None:
         _last_tick_at[game_id] = datetime.now(UTC)
         await _broadcast_tick_result(game_id, result)
 
+    for game_id in _due_for_event_check(games, now):
+        _last_event_check_at[game_id] = now
+        await _roll_event(game_id)
+
     for game in games:
         await _update_trucks(game.id, now)
         await _update_vehicles(game.id, now)
         await _update_station_upgrades(game.id)
+        await _expire_events(game.id)
 
 
 async def _run_forever() -> None:
