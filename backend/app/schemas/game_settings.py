@@ -54,6 +54,21 @@ class GameSettings(BaseModel):
     refinery_ai95_purchase_price: Decimal = Field(default=Decimal("45.00"), gt=0)
     refinery_diesel_purchase_price: Decimal = Field(default=Decimal("47.00"), gt=0)
 
+    vehicle_spawn_per_minute: float = Field(default=20.0, ge=0)
+    vehicle_tank_capacity_liters: Decimal = Field(default=Decimal("50.00"), gt=0)
+    vehicle_refuel_threshold_ratio: float = Field(default=0.3, ge=0, le=1)
+    vehicle_max_detour_km: float = Field(default=5.0, gt=0)
+    vehicle_average_service_minutes: float = Field(default=3.0, gt=0)
+    station_pump_count: int = Field(default=2, gt=0)
+    station_price_score_weight: float = Field(default=1.0, ge=0)
+    station_distance_score_weight: float = Field(default=1.0, ge=0)
+    station_queue_score_weight: float = Field(default=1.0, ge=0)
+    station_rating_score_weight: float = Field(default=1.0, ge=0)
+    station_random_factor_weight: float = Field(default=0.2, ge=0)
+    vehicle_max_queue_length: int = Field(default=8, gt=0)
+    station_rating_increase_per_sale: float = Field(default=0.01, ge=0)
+    station_rating_decrease_per_stockout: float = Field(default=0.05, ge=0)
+
     @model_validator(mode="after")
     def _check_price_bounds(self) -> Self:
         if self.min_retail_price_per_liter >= self.max_retail_price_per_liter:

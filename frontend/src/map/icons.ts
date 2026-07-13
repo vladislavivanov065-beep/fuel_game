@@ -21,6 +21,13 @@ export const truckIcon = L.divIcon({
   iconAnchor: [6, 6],
 })
 
+export const vehicleIcon = L.divIcon({
+  className: 'vehicle-marker',
+  html: '<div style="width:7px;height:7px;border-radius:50%;background:#1976d2;border:1px solid #0d3c73;"></div>',
+  iconSize: [7, 7],
+  iconAnchor: [4, 4],
+})
+
 const HEX_COLOR_PATTERN = /^#[0-9A-Fa-f]{6}$/
 
 export function ownedStationIcon(color: string): L.DivIcon {

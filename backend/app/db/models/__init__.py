@@ -13,8 +13,10 @@ from app.db.models.station_fuel import FuelType, StationFuel
 from app.db.models.station_template import StationTemplate
 from app.db.models.truck import Truck, TruckStatus
 from app.db.models.user import User
+from app.db.models.vehicle import DriverType, Vehicle, VehicleStatus
 
 __all__ = [
+    "DriverType",
     "FinancialTransaction",
     "FuelOrder",
     "FuelOrderStatus",
@@ -35,4 +37,6 @@ __all__ = [
     "Truck",
     "TruckStatus",
     "User",
+    "Vehicle",
+    "VehicleStatus",
 ]

@@ -19,6 +19,7 @@ from app.db.models.station_fuel import StationFuel
 from app.db.models.station_template import StationTemplate
 from app.db.models.truck import Truck
 from app.db.models.user import User
+from app.db.models.vehicle import Vehicle
 from app.db.session import async_session_factory
 from app.main import app
 
@@ -39,6 +40,7 @@ async def db_session() -> AsyncSession:
 async def _wipe_database() -> None:
     async with async_session_factory() as db:
         await db.execute(delete(FinancialTransaction))
+        await db.execute(delete(Vehicle))
         await db.execute(delete(Truck))
         await db.execute(delete(FuelOrderStop))
         await db.execute(delete(FuelOrder))

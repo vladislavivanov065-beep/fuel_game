@@ -7,19 +7,22 @@ from sqlalchemy import select
 
 from app.db.models.game_room import GameRoom, GameStatus
 from app.db.models.truck import Truck
+from app.db.models.vehicle import Vehicle
 from app.db.session import async_session_factory
 from app.schemas.game_settings import GameSettings
-from app.simulation import economy, trucks
+from app.simulation import economy, trucks, vehicles
 from app.websocket.connection_manager import connection_manager
 
 logger = logging.getLogger(__name__)
 
 _POLL_INTERVAL_SECONDS = 1.0
 _TRUCK_BROADCAST_INTERVAL_SECONDS = 3.0
+_VEHICLE_BROADCAST_INTERVAL_SECONDS = 3.0
 
 _task: asyncio.Task[None] | None = None
 _last_tick_at: dict[uuid.UUID, datetime] = {}
 _last_truck_broadcast_at: dict[uuid.UUID, datetime] = {}
+_last_vehicle_broadcast_at: dict[uuid.UUID, datetime] = {}
 
 
 async def _broadcast_tick_result(game_id: uuid.UUID, result: economy.EconomicTickResult) -> None:
@@ -131,6 +134,76 @@ async def _update_trucks(game_id: uuid.UUID, now: datetime) -> None:
     await _broadcast_truck_tick(game_id, result, now)
 
 
+async def _broadcast_vehicle_tick(
+    game_id: uuid.UUID, result: vehicles.VehicleTickResult, now: datetime
+) -> None:
+    for purchase in result.purchases:
+        await connection_manager.broadcast(
+            game_id,
+            "vehicle.fuel_purchase",
+            {
+                "vehicle_id": str(purchase.vehicle_id),
+                "station_id": str(purchase.station_id),
+                "player_id": str(purchase.player_id),
+                "fuel_type": purchase.fuel_type.value,
+                "liters": str(purchase.liters),
+                "total_amount": str(purchase.total_amount),
+            },
+        )
+
+    if result.arrived_vehicle_ids:
+        await connection_manager.broadcast(
+            game_id,
+            "vehicle.arrived",
+            {"vehicle_ids": [str(vehicle_id) for vehicle_id in result.arrived_vehicle_ids]},
+        )
+
+    last_broadcast = _last_vehicle_broadcast_at.get(game_id)
+    due = (
+        last_broadcast is None
+        or (now - last_broadcast).total_seconds() >= _VEHICLE_BROADCAST_INTERVAL_SECONDS
+    )
+    if result.updated_vehicle_ids and due:
+        _last_vehicle_broadcast_at[game_id] = now
+        async with async_session_factory() as db:
+            vehicle_rows = (
+                await db.execute(select(Vehicle).where(Vehicle.id.in_(result.updated_vehicle_ids)))
+            ).scalars()
+            await connection_manager.broadcast(
+                game_id,
+                "vehicle.updated",
+                {
+                    "vehicles": [
+                        {
+                            "vehicle_id": str(vehicle.id),
+                            "latitude": vehicle.current_latitude,
+                            "longitude": vehicle.current_longitude,
+                            "progress": vehicle.route_progress,
+                            "status": vehicle.status.value,
+                        }
+                        for vehicle in vehicle_rows
+                    ]
+                },
+            )
+
+
+async def _update_vehicles(game_id: uuid.UUID, now: datetime) -> None:
+    async with async_session_factory() as db:
+        try:
+            await vehicles.spawn_vehicles_for_game(db, game_id)
+        except Exception:
+            logger.exception("Vehicle spawn failed for game %s", game_id)
+
+    async with async_session_factory() as db:
+        try:
+            result = await vehicles.update_vehicles_for_game(db, game_id)
+        except Exception:
+            logger.exception("Vehicle update failed for game %s", game_id)
+            return
+
+    await _broadcast_vehicle_tick(game_id, result, now)
+
+
 async def _run_tick_cycle() -> None:
     now = datetime.now(UTC)
     games = await _running_games()
@@ -150,6 +223,7 @@ async def _run_tick_cycle() -> None:
 
     for game in games:
         await _update_trucks(game.id, now)
+        await _update_vehicles(game.id, now)
 
 
 async def _run_forever() -> None:
