@@ -10,7 +10,6 @@ class Settings(BaseSettings):
     environment: str = "development"
 
     database_url: str = "postgresql+asyncpg://gaswars:gaswars@localhost:5432/gaswars"
-    redis_url: str = "redis://localhost:6379/0"
 
     cors_origins: list[str] = ["http://localhost:5173"]
 

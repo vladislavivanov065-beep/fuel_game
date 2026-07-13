@@ -77,10 +77,11 @@ async def login(
 @router.post("/logout", status_code=status.HTTP_204_NO_CONTENT)
 async def logout(
     response: Response,
+    db: Annotated[AsyncSession, Depends(get_db_session)],
     session_id: Annotated[str | None, Cookie(alias=settings.session_cookie_name)] = None,
 ) -> None:
     if session_id is not None:
-        await auth_service.logout_user(session_id)
+        await auth_service.logout_user(db, session_id)
     response.delete_cookie(key=settings.session_cookie_name, path="/")
 
 

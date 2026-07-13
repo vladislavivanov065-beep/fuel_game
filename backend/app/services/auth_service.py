@@ -30,7 +30,7 @@ async def register_user(db: AsyncSession, data: RegisterRequest) -> tuple[User, 
         raise EmailAlreadyExistsError from exc
     await db.refresh(user)
 
-    session_token = await create_session(user.id)
+    session_token = await create_session(db, user.id)
     return user, session_token
 
 
@@ -40,19 +40,19 @@ async def login_user(db: AsyncSession, data: LoginRequest) -> tuple[User, str]:
     if user is None or not verify_password(data.password, user.password_hash):
         raise InvalidCredentialsError
 
-    session_token = await create_session(user.id)
+    session_token = await create_session(db, user.id)
     return user, session_token
 
 
-async def logout_user(session_token: str) -> None:
-    await delete_session(session_token)
+async def logout_user(db: AsyncSession, session_token: str) -> None:
+    await delete_session(db, session_token)
 
 
 async def get_current_user(db: AsyncSession, session_token: str | None) -> User | None:
     if session_token is None:
         return None
 
-    user_id = await get_session_user_id(session_token)
+    user_id = await get_session_user_id(db, session_token)
     if user_id is None:
         return None
 

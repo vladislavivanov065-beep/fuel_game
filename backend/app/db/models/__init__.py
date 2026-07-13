@@ -10,6 +10,7 @@ from app.db.models.refinery import Refinery
 from app.db.models.refinery_fuel import RefineryFuel
 from app.db.models.road_edge import RoadEdge
 from app.db.models.road_node import RoadNode
+from app.db.models.session import Session
 from app.db.models.station_fuel import FuelType, StationFuel
 from app.db.models.station_template import StationTemplate
 from app.db.models.station_upgrade import StationUpgrade, UpgradeStatus, UpgradeType
@@ -37,6 +38,7 @@ __all__ = [
     "RefineryFuel",
     "RoadEdge",
     "RoadNode",
+    "Session",
     "StationFuel",
     "StationTemplate",
     "StationUpgrade",
