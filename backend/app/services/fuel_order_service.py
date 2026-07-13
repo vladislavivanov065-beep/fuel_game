@@ -22,7 +22,7 @@ from app.db.models.refinery_fuel import RefineryFuel
 from app.db.models.station_fuel import FuelType, StationFuel
 from app.db.models.truck import Truck, TruckStatus
 from app.schemas.game_settings import GameSettings
-from app.services import routing_service
+from app.services import event_service, routing_service
 
 _CENTS = Decimal("0.01")
 
@@ -103,6 +103,7 @@ async def create_fuel_order(
         raise GameNotRunningError
 
     room_settings = GameSettings.model_validate(game.settings_json)
+    event_modifiers, _ = await event_service.get_active_event_effects(db, game_id)
 
     total_liters = sum((stop.liters for stop in stops), Decimal("0"))
     if total_liters > room_settings.fuel_truck_capacity_liters:
@@ -196,7 +197,9 @@ async def create_fuel_order(
             raise InsufficientRefineryStockError
         refinery_fuel_rows[fuel_type] = refinery_fuel_row
 
-    nodes, edges = await routing_service.load_graph(db)
+    nodes, edges = await routing_service.load_graph(
+        db, traffic_multiplier=event_modifiers.traffic_multiplier
+    )
     try:
         refinery_node = routing_service.find_nearest_node(
             nodes, refinery.latitude, refinery.longitude
@@ -228,8 +231,14 @@ async def create_fuel_order(
     except routing_service.NoRouteFoundError as exc:
         raise RouteNotFoundError from exc
 
+    refinery_price_multiplier = Decimal(str(event_modifiers.refinery_price_multiplier))
     fuel_cost = sum(
-        (refinery_fuel_rows[stop.fuel_type].purchase_price * stop.liters for stop in stops),
+        (
+            refinery_fuel_rows[stop.fuel_type].purchase_price
+            * refinery_price_multiplier
+            * stop.liters
+            for stop in stops
+        ),
         Decimal("0"),
     ).quantize(_CENTS, rounding=ROUND_HALF_UP)
     delivery_cost = (

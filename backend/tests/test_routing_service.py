@@ -147,6 +147,22 @@ def test_build_multi_stop_route_accumulates_across_legs() -> None:
     assert last_stop_point.cumulative_km == pytest.approx(25.0)
 
 
+def test_build_multi_stop_route_handles_a_waypoint_that_repeats_the_previous_one() -> None:
+    """A middle waypoint identical to the one before it (e.g. a chosen
+    station's nearest node happens to equal the previous stop) is a trivial,
+    zero-distance leg — it must not crash the cumulative-points chaining."""
+    nodes = _nodes()
+    edges = _two_way_edges(NODE_A, NODE_B, 10.0) + _two_way_edges(NODE_B, NODE_C, 10.0)
+
+    route = build_multi_stop_route(nodes, edges, [NODE_A, NODE_B, NODE_B, NODE_C])
+
+    assert route.total_distance_km == pytest.approx(20.0)
+    assert len(route.stop_point_indices) == 3
+    # The repeated waypoint contributes no new point, so its stop index
+    # equals the previous stop's index.
+    assert route.stop_point_indices[0] == route.stop_point_indices[1]
+
+
 def test_build_multi_stop_route_requires_at_least_two_waypoints() -> None:
     nodes = _nodes()
     with pytest.raises(NoRouteFoundError):

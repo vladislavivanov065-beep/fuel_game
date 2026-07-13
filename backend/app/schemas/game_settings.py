@@ -102,6 +102,102 @@ _DEFAULT_STATION_UPGRADES: dict[str, StationUpgradeTypeSettings] = {
 }
 
 
+class EventModifiers(BaseModel):
+    """Runtime multipliers applied on top of the room's static settings while
+    a GameEvent is active (TECHNICAL_SPEC.md section 23) — never mutates the
+    underlying settings/rows, just scales values at read time.
+    """
+
+    traffic_multiplier: float = Field(default=1.0, ge=0)
+    vehicle_spawn_multiplier: float = Field(default=1.0, ge=0)
+    refuel_threshold_multiplier: float = Field(default=1.0, ge=0)
+    refinery_price_multiplier: float = Field(default=1.0, ge=0)
+    price_sensitivity_multiplier: float = Field(default=1.0, ge=0)
+    ancillary_revenue_multiplier: float = Field(default=1.0, ge=0)
+    attractiveness_bonus: float = Field(default=0.0, ge=0)
+    attractiveness_upgrade_types: list[str] = Field(default_factory=list)
+
+
+class EventDefinition(BaseModel):
+    """Per-event-type coefficients: duration, relative spawn weight, the
+    runtime modifiers it applies while active, and any one-time effects
+    triggered when it starts (road closure, station fines, refinery stock
+    loss) — TECHNICAL_SPEC.md section 22/23.
+    """
+
+    duration_seconds: int = Field(gt=0)
+    probability_weight: float = Field(gt=0)
+    modifiers: EventModifiers = Field(default_factory=EventModifiers)
+    regional: bool = False
+    close_random_edge: bool = False
+    inspect_station_count: int = Field(default=0, ge=0)
+    fine_amount: Decimal = Field(default=Decimal("0"), ge=0)
+    stock_loss_ratio: float = Field(default=0.0, ge=0, le=1)
+
+
+_DEFAULT_EVENT_DEFINITIONS: dict[str, EventDefinition] = {
+    "storm": EventDefinition(
+        duration_seconds=300,
+        probability_weight=1.0,
+        modifiers=EventModifiers(traffic_multiplier=1.3, ancillary_revenue_multiplier=0.7),
+    ),
+    "severe_storm": EventDefinition(
+        duration_seconds=300,
+        probability_weight=0.6,
+        modifiers=EventModifiers(traffic_multiplier=1.6, vehicle_spawn_multiplier=0.7),
+    ),
+    "fuel_riot": EventDefinition(
+        duration_seconds=240,
+        probability_weight=0.5,
+        modifiers=EventModifiers(vehicle_spawn_multiplier=2.0, refuel_threshold_multiplier=2.5),
+    ),
+    "economic_crisis": EventDefinition(
+        duration_seconds=600,
+        probability_weight=0.4,
+        modifiers=EventModifiers(
+            refinery_price_multiplier=1.3,
+            price_sensitivity_multiplier=1.5,
+            ancillary_revenue_multiplier=0.6,
+        ),
+    ),
+    "oil_price_drop": EventDefinition(
+        duration_seconds=600,
+        probability_weight=0.4,
+        modifiers=EventModifiers(refinery_price_multiplier=0.7),
+    ),
+    "road_works": EventDefinition(
+        duration_seconds=300,
+        probability_weight=0.8,
+        close_random_edge=True,
+    ),
+    "city_festival": EventDefinition(
+        duration_seconds=300,
+        probability_weight=0.6,
+        regional=True,
+        modifiers=EventModifiers(attractiveness_bonus=1.0, vehicle_spawn_multiplier=1.3),
+    ),
+    "tourist_season": EventDefinition(
+        duration_seconds=600,
+        probability_weight=0.5,
+        modifiers=EventModifiers(
+            attractiveness_bonus=0.5, attractiveness_upgrade_types=["parking", "food_court"]
+        ),
+    ),
+    "regulatory_inspection": EventDefinition(
+        duration_seconds=120,
+        probability_weight=0.5,
+        inspect_station_count=2,
+        fine_amount=Decimal("50000"),
+    ),
+    "refinery_breakdown": EventDefinition(
+        duration_seconds=600,
+        probability_weight=0.4,
+        modifiers=EventModifiers(refinery_price_multiplier=1.4),
+        stock_loss_ratio=0.3,
+    ),
+}
+
+
 class WinCondition(enum.StrEnum):
     NET_WORTH = "net_worth"
     REVENUE = "revenue"
@@ -173,6 +269,13 @@ class GameSettings(BaseModel):
     station_advertising_score_weight: float = Field(default=1.0, ge=0)
     station_loyalty_score_weight: float = Field(default=1.0, ge=0)
     car_wash_visit_probability: float = Field(default=0.5, ge=0, le=1)
+
+    event_definitions: dict[str, EventDefinition] = Field(
+        default_factory=lambda: dict(_DEFAULT_EVENT_DEFINITIONS)
+    )
+    event_check_interval_seconds: int = Field(default=30, gt=0)
+    event_min_interval_seconds: int = Field(default=60, ge=0)
+    event_region_radius_km: float = Field(default=15.0, gt=0)
 
     @model_validator(mode="after")
     def _check_price_bounds(self) -> Self:

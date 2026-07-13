@@ -22,8 +22,8 @@ from app.db.models.game_station import STATION_STATUS_ACTIVE, GameStation
 from app.db.models.station_fuel import FuelType, StationFuel
 from app.db.models.station_upgrade import UpgradeType
 from app.db.models.vehicle import DriverType, Vehicle, VehicleStatus
-from app.schemas.game_settings import GameSettings
-from app.services import routing_service
+from app.schemas.game_settings import EventModifiers, GameSettings
+from app.services import event_service, routing_service
 from app.simulation.station_upgrades import get_active_upgrade_levels
 
 _CENTS = Decimal("0.01")
@@ -201,6 +201,34 @@ async def _load_station_candidates(
     ]
 
 
+def _event_attractiveness_bonus(
+    *,
+    station: GameStation,
+    upgrade_levels: dict[UpgradeType, int],
+    bonuses: list[event_service.AttractivenessBonus],
+) -> float:
+    total = 0.0
+    for bonus in bonuses:
+        if bonus.region is not None:
+            distance_km = routing_service.haversine_km(
+                station.station_template.latitude,
+                station.station_template.longitude,
+                bonus.region.latitude,
+                bonus.region.longitude,
+            )
+            if distance_km > bonus.region.radius_km:
+                continue
+        if bonus.required_upgrade_types:
+            has_required = any(
+                upgrade_levels.get(UpgradeType(upgrade_type), 0) > 0
+                for upgrade_type in bonus.required_upgrade_types
+            )
+            if not has_required:
+                continue
+        total += bonus.bonus
+    return total
+
+
 def _select_station_for_vehicle(
     *,
     stations: list[tuple[GameStation, dict[FuelType, Any], dict[UpgradeType, int]]],
@@ -212,6 +240,8 @@ def _select_station_for_vehicle(
     profile: DriverProfile,
     settings: GameSettings,
     rng: random.Random,
+    event_modifiers: EventModifiers,
+    attractiveness_bonuses: list[event_service.AttractivenessBonus],
 ) -> GameStation | None:
     direct_km = routing_service.haversine_km(home_lat, home_lon, dest_lat, dest_lon)
 
@@ -235,6 +265,9 @@ def _select_station_for_vehicle(
         upgrade_score, advertising_score, loyalty_score = _score_components_from_upgrades(
             upgrade_levels, settings
         )
+        upgrade_score += _event_attractiveness_bonus(
+            station=station, upgrade_levels=upgrade_levels, bonuses=attractiveness_bonuses
+        )
         candidates.append(
             StationCandidate(
                 station_id=station.id,
@@ -252,12 +285,19 @@ def _select_station_for_vehicle(
     if not candidates:
         return None
 
+    event_profile = DriverProfile(
+        price_sensitivity=profile.price_sensitivity * event_modifiers.price_sensitivity_multiplier,
+        distance_sensitivity=profile.distance_sensitivity,
+        queue_sensitivity=profile.queue_sensitivity,
+        rating_sensitivity=profile.rating_sensitivity,
+    )
+
     cheapest_price = min(candidate.retail_price for candidate in candidates)
     scores = [
         compute_station_score(
             candidate,
             cheapest_available_price=cheapest_price,
-            profile=profile,
+            profile=event_profile,
             settings=settings,
             random_factor=rng.uniform(0.0, 1.0),
         )
@@ -288,6 +328,9 @@ async def spawn_vehicles_for_game(
         return []
 
     settings = GameSettings.model_validate(game.settings_json)
+    event_modifiers, attractiveness_bonuses = await event_service.get_active_event_effects(
+        db, game_id
+    )
 
     active_count = (
         await db.execute(
@@ -302,16 +345,25 @@ async def spawn_vehicles_for_game(
     if last_check is None or capacity <= 0:
         return []
 
+    effective_spawn_per_minute = (
+        settings.vehicle_spawn_per_minute * event_modifiers.vehicle_spawn_multiplier
+    )
+    effective_refuel_threshold = (
+        settings.vehicle_refuel_threshold_ratio * event_modifiers.refuel_threshold_multiplier
+    )
+
     elapsed_minutes = (now - last_check).total_seconds() / 60.0
     _spawn_accumulator[game_id] = (
-        _spawn_accumulator.get(game_id, 0.0) + settings.vehicle_spawn_per_minute * elapsed_minutes
+        _spawn_accumulator.get(game_id, 0.0) + effective_spawn_per_minute * elapsed_minutes
     )
     spawn_count = min(capacity, int(_spawn_accumulator[game_id]))
     if spawn_count <= 0:
         return []
     _spawn_accumulator[game_id] -= spawn_count
 
-    nodes, edges = await routing_service.load_graph(db)
+    nodes, edges = await routing_service.load_graph(
+        db, traffic_multiplier=event_modifiers.traffic_multiplier
+    )
     if len(nodes) < 2:
         return []
 
@@ -340,7 +392,7 @@ async def spawn_vehicles_for_game(
         ).quantize(_CENTS, rounding=ROUND_HALF_UP)
 
         station: GameStation | None = None
-        if fuel_ratio < settings.vehicle_refuel_threshold_ratio:
+        if fuel_ratio < effective_refuel_threshold:
             station = _select_station_for_vehicle(
                 stations=stations,
                 fuel_type=fuel_type,
@@ -351,6 +403,8 @@ async def spawn_vehicles_for_game(
                 profile=profile,
                 settings=settings,
                 rng=rng,
+                event_modifiers=event_modifiers,
+                attractiveness_bonuses=attractiveness_bonuses,
             )
 
         station_node = None
@@ -444,7 +498,11 @@ def _clamp_rating(rating: float) -> float:
 
 
 async def _complete_purchase(
-    db: AsyncSession, vehicle: Vehicle, settings: GameSettings, rng: random.Random
+    db: AsyncSession,
+    vehicle: Vehicle,
+    settings: GameSettings,
+    rng: random.Random,
+    ancillary_revenue_multiplier: float,
 ) -> VehiclePurchaseResult | None:
     """Vehicle purchase per TECHNICAL_SPEC.md section 17: real stock/money transfer."""
     assert vehicle.chosen_station_id is not None
@@ -538,7 +596,9 @@ async def _complete_purchase(
         )
     )
 
-    ancillary_amount = await _apply_ancillary_revenue(db, station, player, settings, rng)
+    ancillary_amount = await _apply_ancillary_revenue(
+        db, station, player, settings, rng, ancillary_revenue_multiplier
+    )
 
     return VehiclePurchaseResult(
         vehicle_id=vehicle.id,
@@ -557,6 +617,7 @@ async def _apply_ancillary_revenue(
     player: GamePlayer,
     settings: GameSettings,
     rng: random.Random,
+    ancillary_revenue_multiplier: float,
 ) -> Decimal:
     """Extra revenue from shop/food-court/car-wash upgrades (section 19.1-19.3).
 
@@ -583,6 +644,7 @@ async def _apply_ancillary_revenue(
             settings.station_upgrades[UpgradeType.CAR_WASH.value].revenue_per_level * car_wash_level
         )
 
+    amount = amount * Decimal(str(ancillary_revenue_multiplier))
     if amount <= Decimal("0"):
         return Decimal("0")
 
@@ -623,6 +685,7 @@ async def update_vehicles_for_game(
     if game is None:
         return VehicleTickResult(updated_vehicle_ids=[], arrived_vehicle_ids=[], purchases=[])
     settings = GameSettings.model_validate(game.settings_json)
+    event_modifiers, _ = await event_service.get_active_event_effects(db, game_id)
 
     vehicle_rows = (await db.execute(select(Vehicle).where(Vehicle.game_id == game_id))).scalars()
 
@@ -635,7 +698,9 @@ async def update_vehicles_for_game(
             if vehicle.station_departure_at is None or now < vehicle.station_departure_at:
                 continue
 
-            purchase = await _complete_purchase(db, vehicle, settings, rng)
+            purchase = await _complete_purchase(
+                db, vehicle, settings, rng, event_modifiers.ancillary_revenue_multiplier
+            )
             if purchase is not None:
                 purchases.append(purchase)
 

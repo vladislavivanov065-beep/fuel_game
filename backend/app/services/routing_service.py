@@ -223,12 +223,16 @@ def build_multi_stop_route(
 
     for i in range(len(waypoint_node_ids) - 1):
         leg = find_route(nodes, edges, waypoint_node_ids[i], waypoint_node_ids[i + 1])
+        # A trivial leg (waypoint == next waypoint) returns two identical
+        # points but empty segment lists; zip stops at the shorter (empty)
+        # side, so no new point is added and the stop simply reuses the
+        # previous point — correct, since nothing moved.
         for point, segment_km, segment_minutes, edge_id in zip(
             leg.points[1:],
             leg.segment_distances_km,
             leg.segment_travel_times_minutes,
             leg.segment_edge_ids,
-            strict=True,
+            strict=False,
         ):
             cumulative_km += segment_km
             cumulative_minutes += segment_minutes
@@ -316,7 +320,12 @@ def serialize_multi_stop_route(route: MultiStopRoute, positions: list[int]) -> d
     }
 
 
-async def load_graph(db: AsyncSession) -> tuple[list[GraphNode], list[GraphEdge]]:
+async def load_graph(
+    db: AsyncSession, *, traffic_multiplier: float = 1.0
+) -> tuple[list[GraphNode], list[GraphEdge]]:
+    """Load the road graph, optionally scaling every edge's traffic
+    coefficient in memory (e.g. a storm GameEvent) — never mutates the
+    stored RoadEdge rows themselves."""
     node_rows = (await db.execute(select(RoadNode))).scalars().all()
     edge_rows = (await db.execute(select(RoadEdge))).scalars().all()
 
@@ -330,7 +339,7 @@ async def load_graph(db: AsyncSession) -> tuple[list[GraphNode], list[GraphEdge]
             to_node_id=row.to_node_id,
             distance_km=row.distance_km,
             max_speed_kmh=row.max_speed_kmh,
-            traffic_coefficient=row.traffic_coefficient,
+            traffic_coefficient=row.traffic_coefficient * traffic_multiplier,
             is_closed=row.is_closed,
         )
         for row in edge_rows
