@@ -17,6 +17,7 @@ import {
 } from '../api/gameStations'
 import { listGameRefineries } from '../api/refineries'
 import { interpolateTruckPosition, listTrucks, type Truck } from '../api/trucks'
+import { interpolateVehiclePosition, listVehicles, type Vehicle } from '../api/vehicles'
 import { FuelOrdersPanel } from '../components/FuelOrdersPanel'
 import { IncomeChart } from '../components/IncomeChart'
 import {
@@ -25,7 +26,7 @@ import {
   MARI_EL_DEFAULT_ZOOM,
   MARI_EL_MIN_ZOOM,
 } from '../map/bounds'
-import { ownedStationIcon, refineryIcon, stationIcon, truckIcon } from '../map/icons'
+import { ownedStationIcon, refineryIcon, stationIcon, truckIcon, vehicleIcon } from '../map/icons'
 import { useAuthStore } from '../stores/authStore'
 import { useGameSocket } from '../websocket/useGameSocket'
 
@@ -316,6 +317,46 @@ function TruckMarkers({ trucks }: { trucks: Truck[] }) {
   )
 }
 
+const DRIVER_LABELS: Record<string, string> = {
+  economical: 'Экономный',
+  hurried: 'Спешащий',
+  loyal: 'Лояльный',
+  premium: 'Премиальный',
+  random: 'Случайный',
+}
+
+function VehicleMarkers({ vehicles }: { vehicles: Vehicle[] }) {
+  const [now, setNow] = useState(() => Date.now())
+
+  useEffect(() => {
+    const interval = setInterval(() => setNow(Date.now()), 500)
+    return () => clearInterval(interval)
+  }, [])
+
+  return (
+    <>
+      {vehicles.map((vehicle) => {
+        const position = interpolateVehiclePosition(vehicle, now)
+        return (
+          <Marker
+            key={vehicle.id}
+            position={[position.latitude, position.longitude]}
+            icon={vehicleIcon}
+          >
+            <Popup>
+              Автомобиль ({DRIVER_LABELS[vehicle.driver_type] ?? vehicle.driver_type})
+              <br />
+              Топливо: {FUEL_LABELS[vehicle.fuel_type as FuelType] ?? vehicle.fuel_type}
+              <br />
+              Статус: {vehicle.status === 'refueling' ? 'в очереди на АЗС' : 'в пути'}
+            </Popup>
+          </Marker>
+        )
+      })}
+    </>
+  )
+}
+
 export function GameMapPage() {
   const { gameId } = useParams<{ gameId: string }>()
   const queryClient = useQueryClient()
@@ -360,6 +401,13 @@ export function GameMapPage() {
     refetchInterval: 5000,
   })
 
+  const { data: vehicles } = useQuery({
+    queryKey: ['vehicles', gameId],
+    queryFn: () => listVehicles(gameId ?? ''),
+    enabled: Boolean(gameId),
+    refetchInterval: 5000,
+  })
+
   const myPlayerId = game?.players.find((p) => p.user_id === user?.id)?.id
   const ownsAnyStation = stations?.some((s) => s.owner_player_id === myPlayerId) ?? false
   const myStations = stations?.filter((s) => s.owner_player_id === myPlayerId) ?? []
@@ -387,6 +435,18 @@ export function GameMapPage() {
     }
     if (event.event === 'truck.updated' || event.event === 'truck.rerouted') {
       void queryClient.invalidateQueries({ queryKey: ['trucks', gameId] })
+    }
+    if (
+      event.event === 'vehicle.updated' ||
+      event.event === 'vehicle.arrived' ||
+      event.event === 'vehicle.fuel_purchase'
+    ) {
+      void queryClient.invalidateQueries({ queryKey: ['vehicles', gameId] })
+    }
+    if (event.event === 'vehicle.fuel_purchase') {
+      void queryClient.invalidateQueries({ queryKey: ['gameStations', gameId] })
+      void queryClient.invalidateQueries({ queryKey: ['game', gameId] })
+      void queryClient.invalidateQueries({ queryKey: ['transactions', gameId] })
     }
   })
 
@@ -436,6 +496,7 @@ export function GameMapPage() {
             url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
           />
           <TruckMarkers trucks={trucks ?? []} />
+          <VehicleMarkers vehicles={vehicles ?? []} />
           {refineries?.map((refinery) => (
             <Marker
               key={refinery.id}
