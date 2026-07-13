@@ -20,6 +20,7 @@ import { interpolateTruckPosition, listTrucks, type Truck } from '../api/trucks'
 import { interpolateVehiclePosition, listVehicles, type Vehicle } from '../api/vehicles'
 import { FuelOrdersPanel } from '../components/FuelOrdersPanel'
 import { IncomeChart } from '../components/IncomeChart'
+import { StationUpgradesPanel } from '../components/StationUpgradesPanel'
 import {
   MARI_EL_BOUNDS,
   MARI_EL_CENTER,
@@ -448,6 +449,15 @@ export function GameMapPage() {
       void queryClient.invalidateQueries({ queryKey: ['game', gameId] })
       void queryClient.invalidateQueries({ queryKey: ['transactions', gameId] })
     }
+    if (
+      event.event === 'station_upgrade.purchased' ||
+      event.event === 'station_upgrade.completed' ||
+      event.event === 'station_upgrade.expired'
+    ) {
+      void queryClient.invalidateQueries({ queryKey: ['stationUpgrades', gameId] })
+      void queryClient.invalidateQueries({ queryKey: ['gameStations', gameId] })
+      void queryClient.invalidateQueries({ queryKey: ['game', gameId] })
+    }
   })
 
   function refreshAfterOrder(): void {
@@ -563,6 +573,9 @@ export function GameMapPage() {
                           station={station}
                           onSaved={refreshAfterPriceChange}
                         />
+                      )}
+                      {gameId && (
+                        <StationUpgradesPanel gameId={gameId} stationId={station.id} />
                       )}
                     </>
                   )}

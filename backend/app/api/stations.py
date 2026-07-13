@@ -8,7 +8,12 @@ from app.api.deps import require_current_user
 from app.db.models.user import User
 from app.db.session import get_db_session
 from app.schemas.station import GameStationResponse, SetStationPriceRequest, StationFuelResponse
-from app.services import game_service, station_service
+from app.schemas.station_upgrade import (
+    PurchaseStationUpgradeRequest,
+    StationUpgradeInfoResponse,
+    StationUpgradeResponse,
+)
+from app.services import game_service, station_service, station_upgrade_service
 from app.websocket.connection_manager import connection_manager
 
 router = APIRouter(prefix="/api/games/{game_id}/stations", tags=["stations"])
@@ -163,3 +168,77 @@ async def set_station_price(
     )
 
     return StationFuelResponse.from_model(station_fuel)
+
+
+@router.get("/{station_id}/upgrades", response_model=list[StationUpgradeInfoResponse])
+async def list_station_upgrades(
+    game_id: uuid.UUID,
+    station_id: uuid.UUID,
+    user: Annotated[User, Depends(require_current_user)],
+    db: Annotated[AsyncSession, Depends(get_db_session)],
+) -> list[StationUpgradeInfoResponse]:
+    await _ensure_game_member(db, game_id, user.id)
+
+    try:
+        infos = await station_upgrade_service.list_upgrade_info(db, game_id, station_id)
+    except station_upgrade_service.GameNotFoundError as exc:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Game not found") from exc
+
+    return [StationUpgradeInfoResponse.from_info(info) for info in infos]
+
+
+@router.post(
+    "/{station_id}/upgrades",
+    response_model=StationUpgradeResponse,
+    status_code=status.HTTP_201_CREATED,
+)
+async def purchase_station_upgrade(
+    game_id: uuid.UUID,
+    station_id: uuid.UUID,
+    data: PurchaseStationUpgradeRequest,
+    user: Annotated[User, Depends(require_current_user)],
+    db: Annotated[AsyncSession, Depends(get_db_session)],
+) -> StationUpgradeResponse:
+    try:
+        upgrade = await station_upgrade_service.purchase_upgrade(
+            db, game_id, user.id, station_id, data.upgrade_type
+        )
+    except station_upgrade_service.GameNotFoundError as exc:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Game not found") from exc
+    except station_upgrade_service.GameNotRunningError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT, detail="Game is not running"
+        ) from exc
+    except station_upgrade_service.NotAGameMemberError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN, detail="You are not a member of this game"
+        ) from exc
+    except station_upgrade_service.StationNotFoundError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="Station not found"
+        ) from exc
+    except station_upgrade_service.StationNotOwnedByPlayerError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN, detail="You do not own this station"
+        ) from exc
+    except station_upgrade_service.StationLevelTooLowError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT, detail="Station level is too low"
+        ) from exc
+    except station_upgrade_service.InsufficientFundsError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT, detail="Insufficient funds"
+        ) from exc
+
+    await connection_manager.broadcast(
+        game_id,
+        "station_upgrade.purchased",
+        {
+            "upgrade_id": str(upgrade.id),
+            "station_id": str(station_id),
+            "upgrade_type": upgrade.upgrade_type.value,
+            "level": upgrade.level,
+        },
+    )
+
+    return StationUpgradeResponse.from_model(upgrade)

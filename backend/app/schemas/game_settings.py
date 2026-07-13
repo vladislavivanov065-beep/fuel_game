@@ -5,6 +5,103 @@ from typing import Self
 from pydantic import BaseModel, Field, model_validator
 
 
+class StationUpgradeTypeSettings(BaseModel):
+    """Per-upgrade-type coefficients (TECHNICAL_SPEC.md section 19): every
+    upgrade has a level, cost, build time, maintenance cost, and bonuses.
+
+    ``bonus_per_level`` is a generic attractiveness/effect coefficient whose
+    exact meaning depends on the upgrade type (extra pumps, extra capacity
+    liters, rating points, score weight, ...); ``revenue_per_level`` is the
+    extra money generated per fuel sale at the station, where applicable.
+    ``maintenance_per_level`` is tracked but not yet auto-deducted (see
+    Этап 9 known limitations).
+    """
+
+    base_cost: Decimal = Field(gt=0)
+    cost_per_level: Decimal = Field(ge=0)
+    build_minutes: float = Field(gt=0)
+    maintenance_per_level: Decimal = Field(ge=0)
+    bonus_per_level: float = Field(ge=0)
+    revenue_per_level: Decimal = Field(ge=0)
+    min_station_level: int = Field(default=1, gt=0)
+
+
+_DEFAULT_STATION_UPGRADES: dict[str, StationUpgradeTypeSettings] = {
+    "pumps": StationUpgradeTypeSettings(
+        base_cost=Decimal("500000"),
+        cost_per_level=Decimal("250000"),
+        build_minutes=10.0,
+        maintenance_per_level=Decimal("2000"),
+        bonus_per_level=1.0,
+        revenue_per_level=Decimal("0"),
+    ),
+    "tanks": StationUpgradeTypeSettings(
+        base_cost=Decimal("400000"),
+        cost_per_level=Decimal("200000"),
+        build_minutes=15.0,
+        maintenance_per_level=Decimal("1000"),
+        bonus_per_level=5000.0,
+        revenue_per_level=Decimal("0"),
+    ),
+    "shop": StationUpgradeTypeSettings(
+        base_cost=Decimal("300000"),
+        cost_per_level=Decimal("150000"),
+        build_minutes=10.0,
+        maintenance_per_level=Decimal("3000"),
+        bonus_per_level=0.3,
+        revenue_per_level=Decimal("50"),
+    ),
+    "food_court": StationUpgradeTypeSettings(
+        base_cost=Decimal("600000"),
+        cost_per_level=Decimal("300000"),
+        build_minutes=20.0,
+        maintenance_per_level=Decimal("5000"),
+        bonus_per_level=0.4,
+        revenue_per_level=Decimal("80"),
+    ),
+    "car_wash": StationUpgradeTypeSettings(
+        base_cost=Decimal("350000"),
+        cost_per_level=Decimal("150000"),
+        build_minutes=12.0,
+        maintenance_per_level=Decimal("2000"),
+        bonus_per_level=0.2,
+        revenue_per_level=Decimal("100"),
+    ),
+    "rating": StationUpgradeTypeSettings(
+        base_cost=Decimal("250000"),
+        cost_per_level=Decimal("150000"),
+        build_minutes=8.0,
+        maintenance_per_level=Decimal("1000"),
+        bonus_per_level=0.2,
+        revenue_per_level=Decimal("0"),
+    ),
+    "advertising": StationUpgradeTypeSettings(
+        base_cost=Decimal("200000"),
+        cost_per_level=Decimal("180000"),
+        build_minutes=15.0,
+        maintenance_per_level=Decimal("0"),
+        bonus_per_level=0.5,
+        revenue_per_level=Decimal("0"),
+    ),
+    "parking": StationUpgradeTypeSettings(
+        base_cost=Decimal("150000"),
+        cost_per_level=Decimal("100000"),
+        build_minutes=8.0,
+        maintenance_per_level=Decimal("500"),
+        bonus_per_level=0.15,
+        revenue_per_level=Decimal("0"),
+    ),
+    "loyalty_program": StationUpgradeTypeSettings(
+        base_cost=Decimal("450000"),
+        cost_per_level=Decimal("250000"),
+        build_minutes=15.0,
+        maintenance_per_level=Decimal("2000"),
+        bonus_per_level=0.5,
+        revenue_per_level=Decimal("0"),
+    ),
+}
+
+
 class WinCondition(enum.StrEnum):
     NET_WORTH = "net_worth"
     REVENUE = "revenue"
@@ -68,6 +165,14 @@ class GameSettings(BaseModel):
     vehicle_max_queue_length: int = Field(default=8, gt=0)
     station_rating_increase_per_sale: float = Field(default=0.01, ge=0)
     station_rating_decrease_per_stockout: float = Field(default=0.05, ge=0)
+
+    station_upgrades: dict[str, StationUpgradeTypeSettings] = Field(
+        default_factory=lambda: dict(_DEFAULT_STATION_UPGRADES)
+    )
+    station_upgrade_score_weight: float = Field(default=1.0, ge=0)
+    station_advertising_score_weight: float = Field(default=1.0, ge=0)
+    station_loyalty_score_weight: float = Field(default=1.0, ge=0)
+    car_wash_visit_probability: float = Field(default=0.5, ge=0, le=1)
 
     @model_validator(mode="after")
     def _check_price_bounds(self) -> Self:

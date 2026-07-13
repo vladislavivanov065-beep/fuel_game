@@ -11,6 +11,7 @@ from app.db.models.road_edge import RoadEdge
 from app.db.models.road_node import RoadNode
 from app.db.models.station_fuel import FuelType, StationFuel
 from app.db.models.station_template import StationTemplate
+from app.db.models.station_upgrade import StationUpgrade, UpgradeStatus, UpgradeType
 from app.db.models.truck import Truck, TruckStatus
 from app.db.models.user import User
 from app.db.models.vehicle import DriverType, Vehicle, VehicleStatus
@@ -34,8 +35,11 @@ __all__ = [
     "RoadNode",
     "StationFuel",
     "StationTemplate",
+    "StationUpgrade",
     "Truck",
     "TruckStatus",
+    "UpgradeStatus",
+    "UpgradeType",
     "User",
     "Vehicle",
     "VehicleStatus",
