@@ -24,11 +24,15 @@ export interface FuelOrder {
   stops: FuelOrderStop[]
 }
 
-export interface CreateFuelOrderPayload {
-  refinery_id: string
+export interface CreateFuelOrderStopPayload {
   station_id: string
   fuel_type: FuelType
   liters: string
+}
+
+export interface CreateFuelOrderPayload {
+  refinery_id: string
+  stops: CreateFuelOrderStopPayload[]
 }
 
 export function createFuelOrder(

@@ -13,8 +13,11 @@ from app.db.models.game_room import GameRoom
 from app.db.models.game_station import GameStation
 from app.db.models.refinery import Refinery
 from app.db.models.refinery_fuel import RefineryFuel
+from app.db.models.road_edge import RoadEdge
+from app.db.models.road_node import RoadNode
 from app.db.models.station_fuel import StationFuel
 from app.db.models.station_template import StationTemplate
+from app.db.models.truck import Truck
 from app.db.models.user import User
 from app.db.session import async_session_factory
 from app.main import app
@@ -36,6 +39,7 @@ async def db_session() -> AsyncSession:
 async def _wipe_database() -> None:
     async with async_session_factory() as db:
         await db.execute(delete(FinancialTransaction))
+        await db.execute(delete(Truck))
         await db.execute(delete(FuelOrderStop))
         await db.execute(delete(FuelOrder))
         await db.execute(delete(FuelSale))
@@ -46,6 +50,8 @@ async def _wipe_database() -> None:
         await db.execute(delete(GameRoom))
         await db.execute(delete(StationTemplate))
         await db.execute(delete(Refinery))
+        await db.execute(delete(RoadEdge))
+        await db.execute(delete(RoadNode))
         await db.execute(delete(User))
         await db.commit()
 
