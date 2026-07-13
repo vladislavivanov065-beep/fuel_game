@@ -7,8 +7,11 @@ from app.db.models.game_room import GameRoom, GameStatus
 from app.db.models.game_station import GameStation
 from app.db.models.refinery import Refinery
 from app.db.models.refinery_fuel import RefineryFuel
+from app.db.models.road_edge import RoadEdge
+from app.db.models.road_node import RoadNode
 from app.db.models.station_fuel import FuelType, StationFuel
 from app.db.models.station_template import StationTemplate
+from app.db.models.truck import Truck, TruckStatus
 from app.db.models.user import User
 
 __all__ = [
@@ -25,7 +28,11 @@ __all__ = [
     "GameStatus",
     "Refinery",
     "RefineryFuel",
+    "RoadEdge",
+    "RoadNode",
     "StationFuel",
     "StationTemplate",
+    "Truck",
+    "TruckStatus",
     "User",
 ]

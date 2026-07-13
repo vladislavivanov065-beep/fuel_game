@@ -6,18 +6,20 @@ from datetime import UTC, datetime
 from sqlalchemy import select
 
 from app.db.models.game_room import GameRoom, GameStatus
+from app.db.models.truck import Truck
 from app.db.session import async_session_factory
 from app.schemas.game_settings import GameSettings
-from app.services import fuel_order_service
-from app.simulation import economy
+from app.simulation import economy, trucks
 from app.websocket.connection_manager import connection_manager
 
 logger = logging.getLogger(__name__)
 
 _POLL_INTERVAL_SECONDS = 1.0
+_TRUCK_BROADCAST_INTERVAL_SECONDS = 3.0
 
 _task: asyncio.Task[None] | None = None
 _last_tick_at: dict[uuid.UUID, datetime] = {}
+_last_truck_broadcast_at: dict[uuid.UUID, datetime] = {}
 
 
 async def _broadcast_tick_result(game_id: uuid.UUID, result: economy.EconomicTickResult) -> None:
@@ -69,32 +71,64 @@ def _due_game_ids(games: list[GameRoom], now: datetime) -> list[uuid.UUID]:
     return due
 
 
-async def _broadcast_delivered_orders(
-    game_id: uuid.UUID, delivered: list[fuel_order_service.DeliveredOrderResult]
+async def _broadcast_truck_tick(
+    game_id: uuid.UUID, result: trucks.TruckTickResult, now: datetime
 ) -> None:
-    for order in delivered:
+    for stop in result.delivered_stops:
         await connection_manager.broadcast(
             game_id,
             "fuel_order.delivered",
             {
-                "order_id": str(order.order_id),
-                "player_id": str(order.player_id),
-                "station_id": str(order.station_id),
-                "fuel_type": order.fuel_type.value,
-                "liters": str(order.liters),
+                "order_id": str(stop.order_id),
+                "player_id": str(stop.player_id),
+                "station_id": str(stop.station_id),
+                "fuel_type": stop.fuel_type.value,
+                "liters": str(stop.liters),
             },
         )
 
+    for truck_id in result.rerouted_truck_ids:
+        await connection_manager.broadcast(game_id, "truck.rerouted", {"truck_id": str(truck_id)})
 
-async def _deliver_fuel_orders(game_id: uuid.UUID) -> None:
+    last_broadcast = _last_truck_broadcast_at.get(game_id)
+    due = (
+        last_broadcast is None
+        or (now - last_broadcast).total_seconds() >= _TRUCK_BROADCAST_INTERVAL_SECONDS
+    )
+    if result.updated_truck_ids and due:
+        _last_truck_broadcast_at[game_id] = now
+        async with async_session_factory() as db:
+            truck_rows = (
+                await db.execute(select(Truck).where(Truck.id.in_(result.updated_truck_ids)))
+            ).scalars()
+            await connection_manager.broadcast(
+                game_id,
+                "truck.updated",
+                {
+                    "trucks": [
+                        {
+                            "truck_id": str(truck.id),
+                            "fuel_order_id": str(truck.fuel_order_id),
+                            "latitude": truck.current_latitude,
+                            "longitude": truck.current_longitude,
+                            "progress": truck.route_progress,
+                            "status": truck.status.value,
+                        }
+                        for truck in truck_rows
+                    ]
+                },
+            )
+
+
+async def _update_trucks(game_id: uuid.UUID, now: datetime) -> None:
     async with async_session_factory() as db:
         try:
-            delivered = await fuel_order_service.deliver_due_fuel_orders(db, game_id)
+            result = await trucks.update_trucks_for_game(db, game_id)
         except Exception:
-            logger.exception("Fuel order delivery failed for game %s", game_id)
+            logger.exception("Truck update failed for game %s", game_id)
             return
 
-    await _broadcast_delivered_orders(game_id, delivered)
+    await _broadcast_truck_tick(game_id, result, now)
 
 
 async def _run_tick_cycle() -> None:
@@ -115,7 +149,7 @@ async def _run_tick_cycle() -> None:
         await _broadcast_tick_result(game_id, result)
 
     for game in games:
-        await _deliver_fuel_orders(game.id)
+        await _update_trucks(game.id, now)
 
 
 async def _run_forever() -> None:

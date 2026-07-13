@@ -1,5 +1,5 @@
 import { useQuery, useQueryClient } from '@tanstack/react-query'
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import 'leaflet/dist/leaflet.css'
 import { Link, useParams } from 'react-router-dom'
 import { MapContainer, Marker, Popup, TileLayer } from 'react-leaflet'
@@ -16,6 +16,7 @@ import {
   setStationPrice,
 } from '../api/gameStations'
 import { listGameRefineries } from '../api/refineries'
+import { interpolateTruckPosition, listTrucks, type Truck } from '../api/trucks'
 import { FuelOrdersPanel } from '../components/FuelOrdersPanel'
 import { IncomeChart } from '../components/IncomeChart'
 import {
@@ -24,7 +25,7 @@ import {
   MARI_EL_DEFAULT_ZOOM,
   MARI_EL_MIN_ZOOM,
 } from '../map/bounds'
-import { ownedStationIcon, refineryIcon, stationIcon } from '../map/icons'
+import { ownedStationIcon, refineryIcon, stationIcon, truckIcon } from '../map/icons'
 import { useAuthStore } from '../stores/authStore'
 import { useGameSocket } from '../websocket/useGameSocket'
 
@@ -152,6 +153,12 @@ function NetworkPriceEditor({ gameId, onSaved }: { gameId: string; onSaved: () =
   )
 }
 
+interface OrderRow {
+  stationId: string
+  fuelType: FuelType
+  liters: string
+}
+
 function RefineryOrderForm({
   gameId,
   refineryId,
@@ -163,27 +170,45 @@ function RefineryOrderForm({
   myStations: GameStation[]
   onOrdered: () => void
 }) {
-  const [stationId, setStationId] = useState(myStations[0]?.id ?? '')
-  const [fuelType, setFuelType] = useState<FuelType>('ai92')
-  const [liters, setLiters] = useState('')
+  const [rows, setRows] = useState<OrderRow[]>([
+    { stationId: myStations[0]?.id ?? '', fuelType: 'ai92', liters: '' },
+  ])
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [message, setMessage] = useState<string | null>(null)
 
+  function updateRow(index: number, patch: Partial<OrderRow>): void {
+    setRows((current) => current.map((row, i) => (i === index ? { ...row, ...patch } : row)))
+  }
+
+  function addRow(): void {
+    setRows((current) => [
+      ...current,
+      { stationId: myStations[0]?.id ?? '', fuelType: 'ai92', liters: '' },
+    ])
+  }
+
+  function removeRow(index: number): void {
+    setRows((current) => current.filter((_, i) => i !== index))
+  }
+
   async function handleSubmit(): Promise<void> {
-    if (!stationId || !liters) return
+    const validRows = rows.filter((row) => row.stationId && row.liters)
+    if (validRows.length === 0) return
     setBusy(true)
     setError(null)
     setMessage(null)
     try {
       await createFuelOrder(gameId, {
         refinery_id: refineryId,
-        station_id: stationId,
-        fuel_type: fuelType,
-        liters,
+        stops: validRows.map((row) => ({
+          station_id: row.stationId,
+          fuel_type: row.fuelType,
+          liters: row.liters,
+        })),
       })
       setMessage('Заказ оформлен')
-      setLiters('')
+      setRows([{ stationId: myStations[0]?.id ?? '', fuelType: 'ai92', liters: '' }])
       onOrdered()
     } catch (err) {
       setError(err instanceof ApiError ? err.message : 'Failed to create fuel order')
@@ -198,29 +223,52 @@ function RefineryOrderForm({
 
   return (
     <div style={{ marginTop: 8 }}>
-      <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
-        <select value={stationId} onChange={(e) => setStationId(e.target.value)}>
-          {myStations.map((station) => (
-            <option key={station.id} value={station.id}>
-              {station.name}
-            </option>
-          ))}
-        </select>
-        <select value={fuelType} onChange={(e) => setFuelType(e.target.value as FuelType)}>
-          {Object.entries(FUEL_LABELS).map(([value, label]) => (
-            <option key={value} value={value}>
-              {label}
-            </option>
-          ))}
-        </select>
-        <input
-          type="number"
-          step="1"
-          placeholder="Литры"
-          value={liters}
-          onChange={(e) => setLiters(e.target.value)}
-        />
-        <button type="button" onClick={() => void handleSubmit()} disabled={busy || !liters}>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+        {rows.map((row, index) => (
+          <div key={index} style={{ display: 'flex', gap: 4, alignItems: 'center' }}>
+            <select
+              value={row.stationId}
+              onChange={(e) => updateRow(index, { stationId: e.target.value })}
+            >
+              {myStations.map((station) => (
+                <option key={station.id} value={station.id}>
+                  {station.name}
+                </option>
+              ))}
+            </select>
+            <select
+              value={row.fuelType}
+              onChange={(e) => updateRow(index, { fuelType: e.target.value as FuelType })}
+            >
+              {Object.entries(FUEL_LABELS).map(([value, label]) => (
+                <option key={value} value={value}>
+                  {label}
+                </option>
+              ))}
+            </select>
+            <input
+              type="number"
+              step="1"
+              placeholder="Литры"
+              style={{ width: 70 }}
+              value={row.liters}
+              onChange={(e) => updateRow(index, { liters: e.target.value })}
+            />
+            {rows.length > 1 && (
+              <button type="button" onClick={() => removeRow(index)}>
+                ×
+              </button>
+            )}
+          </div>
+        ))}
+        <button type="button" onClick={addRow} style={{ fontSize: 12 }}>
+          + ещё станция
+        </button>
+        <button
+          type="button"
+          onClick={() => void handleSubmit()}
+          disabled={busy || rows.every((row) => !row.liters)}
+        >
           {busy ? 'Заказываю...' : 'Заказать топливо'}
         </button>
       </div>
@@ -231,6 +279,40 @@ function RefineryOrderForm({
         </p>
       )}
     </div>
+  )
+}
+
+function TruckMarkers({ trucks }: { trucks: Truck[] }) {
+  const [now, setNow] = useState(() => Date.now())
+
+  useEffect(() => {
+    const interval = setInterval(() => setNow(Date.now()), 500)
+    return () => clearInterval(interval)
+  }, [])
+
+  return (
+    <>
+      {trucks
+        .filter((truck) => truck.status === 'en_route')
+        .map((truck) => {
+          const position = interpolateTruckPosition(truck, now)
+          return (
+            <Marker
+              key={truck.id}
+              position={[position.latitude, position.longitude]}
+              icon={truckIcon}
+            >
+              <Popup>
+                Бензовоз
+                <br />
+                Прогресс: {Math.round(truck.route_progress * 100)}%
+                <br />
+                Дистанция: {truck.total_distance_km.toFixed(1)} км
+              </Popup>
+            </Marker>
+          )
+        })}
+    </>
   )
 }
 
@@ -271,6 +353,13 @@ export function GameMapPage() {
     enabled: Boolean(gameId),
   })
 
+  const { data: trucks } = useQuery({
+    queryKey: ['trucks', gameId],
+    queryFn: () => listTrucks(gameId ?? ''),
+    enabled: Boolean(gameId),
+    refetchInterval: 5000,
+  })
+
   const myPlayerId = game?.players.find((p) => p.user_id === user?.id)?.id
   const ownsAnyStation = stations?.some((s) => s.owner_player_id === myPlayerId) ?? false
   const myStations = stations?.filter((s) => s.owner_player_id === myPlayerId) ?? []
@@ -294,6 +383,10 @@ export function GameMapPage() {
       void queryClient.invalidateQueries({ queryKey: ['gameStations', gameId] })
       void queryClient.invalidateQueries({ queryKey: ['refineries', gameId] })
       void queryClient.invalidateQueries({ queryKey: ['game', gameId] })
+      void queryClient.invalidateQueries({ queryKey: ['trucks', gameId] })
+    }
+    if (event.event === 'truck.updated' || event.event === 'truck.rerouted') {
+      void queryClient.invalidateQueries({ queryKey: ['trucks', gameId] })
     }
   })
 
@@ -342,6 +435,7 @@ export function GameMapPage() {
             attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
             url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
           />
+          <TruckMarkers trucks={trucks ?? []} />
           {refineries?.map((refinery) => (
             <Marker
               key={refinery.id}

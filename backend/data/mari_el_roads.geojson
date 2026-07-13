@@ -1,0 +1,105 @@
+{
+  "type": "FeatureCollection",
+  "features": [
+    {
+      "type": "Feature",
+      "properties": { "road_type": "local", "max_speed_kmh": 50, "oneway": false },
+      "geometry": { "type": "LineString", "coordinates": [[47.9520, 56.7010], [47.9012, 56.6612]] }
+    },
+    {
+      "type": "Feature",
+      "properties": { "road_type": "local", "max_speed_kmh": 50, "oneway": false },
+      "geometry": { "type": "LineString", "coordinates": [[47.9012, 56.6612], [47.8845, 56.6389]] }
+    },
+    {
+      "type": "Feature",
+      "properties": { "road_type": "local", "max_speed_kmh": 50, "oneway": false },
+      "geometry": { "type": "LineString", "coordinates": [[47.8845, 56.6389], [47.8712, 56.6155]] }
+    },
+    {
+      "type": "Feature",
+      "properties": { "road_type": "local", "max_speed_kmh": 50, "oneway": false },
+      "geometry": { "type": "LineString", "coordinates": [[47.8845, 56.6389], [47.9245, 56.6301]] }
+    },
+    {
+      "type": "Feature",
+      "properties": { "road_type": "local", "max_speed_kmh": 50, "oneway": false },
+      "geometry": { "type": "LineString", "coordinates": [[47.8845, 56.6389], [47.8501, 56.6420]] }
+    },
+    {
+      "type": "Feature",
+      "properties": { "road_type": "local", "max_speed_kmh": 50, "oneway": false },
+      "geometry": { "type": "LineString", "coordinates": [[47.9245, 56.6301], [47.9520, 56.7010]] }
+    },
+    {
+      "type": "Feature",
+      "properties": { "road_type": "trunk", "max_speed_kmh": 90, "oneway": false },
+      "geometry": { "type": "LineString", "coordinates": [[47.9520, 56.7010], [48.6500, 56.7800]] }
+    },
+    {
+      "type": "Feature",
+      "properties": { "road_type": "trunk", "max_speed_kmh": 90, "oneway": false },
+      "geometry": { "type": "LineString", "coordinates": [[48.6500, 56.7800], [48.2833, 56.6167]] }
+    },
+    {
+      "type": "Feature",
+      "properties": { "road_type": "trunk", "max_speed_kmh": 90, "oneway": false },
+      "geometry": { "type": "LineString", "coordinates": [[48.2833, 56.6167], [48.3606, 55.8697]] }
+    },
+    {
+      "type": "Feature",
+      "properties": { "road_type": "local", "max_speed_kmh": 50, "oneway": false },
+      "geometry": { "type": "LineString", "coordinates": [[48.3606, 55.8697], [48.3820, 55.8790]] }
+    },
+    {
+      "type": "Feature",
+      "properties": { "road_type": "trunk", "max_speed_kmh": 90, "oneway": false },
+      "geometry": { "type": "LineString", "coordinates": [[48.2833, 56.6167], [48.0000, 55.9667]] }
+    },
+    {
+      "type": "Feature",
+      "properties": { "road_type": "trunk", "max_speed_kmh": 90, "oneway": false },
+      "geometry": { "type": "LineString", "coordinates": [[47.9520, 56.7010], [48.1200, 56.2500]] }
+    },
+    {
+      "type": "Feature",
+      "properties": { "road_type": "trunk", "max_speed_kmh": 90, "oneway": false },
+      "geometry": { "type": "LineString", "coordinates": [[48.1200, 56.2500], [46.5667, 56.3333]] }
+    },
+    {
+      "type": "Feature",
+      "properties": { "road_type": "local", "max_speed_kmh": 50, "oneway": false },
+      "geometry": { "type": "LineString", "coordinates": [[46.5667, 56.3333], [46.5450, 56.3410]] }
+    },
+    {
+      "type": "Feature",
+      "properties": { "road_type": "trunk", "max_speed_kmh": 90, "oneway": false },
+      "geometry": { "type": "LineString", "coordinates": [[47.9012, 56.6612], [49.4167, 56.9167]] }
+    },
+    {
+      "type": "Feature",
+      "properties": { "road_type": "trunk", "max_speed_kmh": 90, "oneway": false },
+      "geometry": { "type": "LineString", "coordinates": [[49.4167, 56.9167], [49.4333, 56.8000]] }
+    },
+    {
+      "type": "Feature",
+      "properties": { "road_type": "trunk", "max_speed_kmh": 90, "oneway": false },
+      "geometry": { "type": "LineString", "coordinates": [[49.4333, 56.8000], [49.9000, 57.1667]] }
+    },
+    {
+      "type": "Feature",
+      "properties": { "road_type": "trunk", "max_speed_kmh": 90, "oneway": false },
+      "geometry": { "type": "LineString", "coordinates": [[47.9012, 56.6612], [48.5000, 57.0000]] }
+    },
+    {
+      "type": "Feature",
+      "properties": { "road_type": "trunk", "max_speed_kmh": 90, "oneway": false },
+      "geometry": { "type": "LineString", "coordinates": [[48.5000, 57.0000], [49.2000, 56.9833]] }
+    },
+    {
+      "type": "Feature",
+      "properties": { "road_type": "trunk", "max_speed_kmh": 90, "oneway": false },
+      "geometry": { "type": "LineString", "coordinates": [[48.6500, 56.7800], [48.5000, 57.0000]] }
+    }
+  ]
+}

@@ -12,6 +12,7 @@ from app.schemas.fuel_order import (
     FuelOrderResponse,
     RefineryWithFuelsResponse,
 )
+from app.schemas.truck import TruckResponse
 from app.services import fuel_order_service, game_service, refinery_service
 from app.websocket.connection_manager import connection_manager
 
@@ -44,15 +45,15 @@ async def create_fuel_order(
     user: Annotated[User, Depends(require_current_user)],
     db: Annotated[AsyncSession, Depends(get_db_session)],
 ) -> FuelOrderResponse:
+    stops = [
+        fuel_order_service.FuelOrderStopRequest(
+            station_id=stop.station_id, fuel_type=stop.fuel_type, liters=stop.liters
+        )
+        for stop in data.stops
+    ]
     try:
         order = await fuel_order_service.create_fuel_order(
-            db,
-            game_id,
-            user.id,
-            data.refinery_id,
-            data.station_id,
-            data.fuel_type,
-            data.liters,
+            db, game_id, user.id, data.refinery_id, stops
         )
     except fuel_order_service.GameNotFoundError as exc:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Game not found") from exc
@@ -97,6 +98,14 @@ async def create_fuel_order(
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT, detail="Insufficient funds"
         ) from exc
+    except fuel_order_service.EmptyOrderError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT, detail="Order has no stops"
+        ) from exc
+    except fuel_order_service.RouteNotFoundError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT, detail="No route available to one or more stops"
+        ) from exc
 
     await connection_manager.broadcast(
         game_id,
@@ -127,3 +136,19 @@ async def list_my_fuel_orders(
         ) from exc
 
     return [FuelOrderResponse.from_model(order) for order in orders]
+
+
+@router.get("/trucks", response_model=list[TruckResponse])
+async def list_my_trucks(
+    game_id: uuid.UUID,
+    user: Annotated[User, Depends(require_current_user)],
+    db: Annotated[AsyncSession, Depends(get_db_session)],
+) -> list[TruckResponse]:
+    try:
+        trucks = await fuel_order_service.list_my_trucks(db, game_id, user.id)
+    except fuel_order_service.NotAGameMemberError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN, detail="You are not a member of this game"
+        ) from exc
+
+    return [TruckResponse.from_model(truck) for truck in trucks]

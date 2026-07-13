@@ -16,11 +16,15 @@ if TYPE_CHECKING:
     from app.services.refinery_service import RefineryWithFuels
 
 
-class CreateFuelOrderRequest(BaseModel):
-    refinery_id: uuid.UUID
+class CreateFuelOrderStopRequest(BaseModel):
     station_id: uuid.UUID
     fuel_type: FuelType
     liters: Decimal = Field(gt=0)
+
+
+class CreateFuelOrderRequest(BaseModel):
+    refinery_id: uuid.UUID
+    stops: list[CreateFuelOrderStopRequest] = Field(min_length=1)
 
 
 class RefineryFuelResponse(BaseModel):
