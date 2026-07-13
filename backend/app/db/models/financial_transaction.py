@@ -11,6 +11,8 @@ from app.db.base import Base
 TRANSACTION_TYPE_STATION_PURCHASE = "station_purchase"
 TRANSACTION_TYPE_FUEL_SALE = "fuel_sale"
 TRANSACTION_TYPE_FUEL_ORDER = "fuel_order"
+TRANSACTION_TYPE_STATION_UPGRADE = "station_upgrade"
+TRANSACTION_TYPE_ANCILLARY_REVENUE = "ancillary_revenue"
 
 
 class FinancialTransaction(Base):

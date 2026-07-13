@@ -10,7 +10,7 @@ from app.db.models.truck import Truck
 from app.db.models.vehicle import Vehicle
 from app.db.session import async_session_factory
 from app.schemas.game_settings import GameSettings
-from app.simulation import economy, trucks, vehicles
+from app.simulation import economy, station_upgrades, trucks, vehicles
 from app.websocket.connection_manager import connection_manager
 
 logger = logging.getLogger(__name__)
@@ -204,6 +204,31 @@ async def _update_vehicles(game_id: uuid.UUID, now: datetime) -> None:
     await _broadcast_vehicle_tick(game_id, result, now)
 
 
+async def _broadcast_upgrade_tick(
+    game_id: uuid.UUID, result: station_upgrades.UpgradeTickResult
+) -> None:
+    for upgrade_id in result.activated_upgrade_ids:
+        await connection_manager.broadcast(
+            game_id, "station_upgrade.completed", {"upgrade_id": str(upgrade_id)}
+        )
+    for upgrade_id in result.expired_upgrade_ids:
+        await connection_manager.broadcast(
+            game_id, "station_upgrade.expired", {"upgrade_id": str(upgrade_id)}
+        )
+
+
+async def _update_station_upgrades(game_id: uuid.UUID) -> None:
+    async with async_session_factory() as db:
+        try:
+            result = await station_upgrades.complete_due_upgrades_for_game(db, game_id)
+        except Exception:
+            logger.exception("Station upgrade tick failed for game %s", game_id)
+            return
+
+    if result.activated_upgrade_ids or result.expired_upgrade_ids:
+        await _broadcast_upgrade_tick(game_id, result)
+
+
 async def _run_tick_cycle() -> None:
     now = datetime.now(UTC)
     games = await _running_games()
@@ -224,6 +249,7 @@ async def _run_tick_cycle() -> None:
     for game in games:
         await _update_trucks(game.id, now)
         await _update_vehicles(game.id, now)
+        await _update_station_upgrades(game.id)
 
 
 async def _run_forever() -> None:

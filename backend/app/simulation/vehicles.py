@@ -10,17 +10,56 @@ from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
-from app.db.models.financial_transaction import TRANSACTION_TYPE_FUEL_SALE, FinancialTransaction
+from app.db.models.financial_transaction import (
+    TRANSACTION_TYPE_ANCILLARY_REVENUE,
+    TRANSACTION_TYPE_FUEL_SALE,
+    FinancialTransaction,
+)
 from app.db.models.fuel_sale import FuelSale
 from app.db.models.game_player import GamePlayer
 from app.db.models.game_room import GameRoom, GameStatus
 from app.db.models.game_station import STATION_STATUS_ACTIVE, GameStation
 from app.db.models.station_fuel import FuelType, StationFuel
+from app.db.models.station_upgrade import UpgradeType
 from app.db.models.vehicle import DriverType, Vehicle, VehicleStatus
 from app.schemas.game_settings import GameSettings
 from app.services import routing_service
+from app.simulation.station_upgrades import get_active_upgrade_levels
 
 _CENTS = Decimal("0.01")
+
+_ATTRACTIVENESS_UPGRADE_TYPES = (
+    UpgradeType.PUMPS,
+    UpgradeType.TANKS,
+    UpgradeType.SHOP,
+    UpgradeType.FOOD_COURT,
+    UpgradeType.CAR_WASH,
+    UpgradeType.PARKING,
+)
+
+
+def _score_components_from_upgrades(
+    levels: dict[UpgradeType, int], settings: GameSettings
+) -> tuple[float, float, float]:
+    """upgrade_score/advertising_score/loyalty_score per TECHNICAL_SPEC.md section 16.
+
+    These three components were explicitly deferred in Этап 8 pending the
+    Этап 9 upgrade system; ``levels`` holds each upgrade's *effective*
+    level (0 if none/expired) at one station.
+    """
+    upgrade_score = sum(
+        levels.get(upgrade_type, 0) * settings.station_upgrades[upgrade_type.value].bonus_per_level
+        for upgrade_type in _ATTRACTIVENESS_UPGRADE_TYPES
+    )
+    advertising_score = (
+        levels.get(UpgradeType.ADVERTISING, 0)
+        * settings.station_upgrades[UpgradeType.ADVERTISING.value].bonus_per_level
+    )
+    loyalty_score = (
+        levels.get(UpgradeType.LOYALTY_PROGRAM, 0)
+        * settings.station_upgrades[UpgradeType.LOYALTY_PROGRAM.value].bonus_per_level
+    )
+    return upgrade_score, advertising_score, loyalty_score
 
 
 @dataclass(frozen=True)
@@ -67,6 +106,9 @@ class StationCandidate:
     detour_km: float
     queue_length: int
     rating: float
+    upgrade_score: float = 0.0
+    advertising_score: float = 0.0
+    loyalty_score: float = 0.0
 
 
 def compute_station_score(
@@ -77,8 +119,7 @@ def compute_station_score(
     settings: GameSettings,
     random_factor: float,
 ) -> float:
-    """station_score per TECHNICAL_SPEC.md section 16 (upgrade/advertising/loyalty
-    components are omitted: those systems do not exist yet, see Этап 9)."""
+    """station_score per TECHNICAL_SPEC.md section 16."""
     price_score = float(cheapest_available_price) / float(candidate.retail_price)
     distance_score = 1.0 / (1.0 + candidate.detour_km)
     queue_score = 1.0 / (1.0 + max(candidate.queue_length, 0))
@@ -89,6 +130,9 @@ def compute_station_score(
         + distance_score * profile.distance_sensitivity * settings.station_distance_score_weight
         + queue_score * profile.queue_sensitivity * settings.station_queue_score_weight
         + rating_score * profile.rating_sensitivity * settings.station_rating_score_weight
+        + candidate.upgrade_score * settings.station_upgrade_score_weight
+        + candidate.advertising_score * settings.station_advertising_score_weight
+        + candidate.loyalty_score * settings.station_loyalty_score_weight
         + random_factor * settings.station_random_factor_weight
     )
 
@@ -128,7 +172,7 @@ def _build_vehicle_route(
 
 async def _load_station_candidates(
     db: AsyncSession, game_id: uuid.UUID
-) -> list[tuple[GameStation, dict[FuelType, Any]]]:
+) -> list[tuple[GameStation, dict[FuelType, Any], dict[UpgradeType, int]]]:
     stations = (
         (
             await db.execute(
@@ -147,12 +191,19 @@ async def _load_station_candidates(
         .scalars()
         .all()
     )
-    return [(station, {fuel.fuel_type: fuel for fuel in station.fuels}) for station in stations]
+    return [
+        (
+            station,
+            {fuel.fuel_type: fuel for fuel in station.fuels},
+            await get_active_upgrade_levels(db, station.id),
+        )
+        for station in stations
+    ]
 
 
 def _select_station_for_vehicle(
     *,
-    stations: list[tuple[GameStation, dict[FuelType, Any]]],
+    stations: list[tuple[GameStation, dict[FuelType, Any], dict[UpgradeType, int]]],
     fuel_type: FuelType,
     home_lat: float,
     home_lon: float,
@@ -166,7 +217,7 @@ def _select_station_for_vehicle(
 
     candidates: list[StationCandidate] = []
     stations_by_id: dict[uuid.UUID, GameStation] = {}
-    for station, fuels_by_type in stations:
+    for station, fuels_by_type, upgrade_levels in stations:
         fuel = fuels_by_type.get(fuel_type)
         if fuel is None or fuel.current_liters <= Decimal("0"):
             continue
@@ -181,6 +232,9 @@ def _select_station_for_vehicle(
         if detour_km > settings.vehicle_max_detour_km:
             continue
 
+        upgrade_score, advertising_score, loyalty_score = _score_components_from_upgrades(
+            upgrade_levels, settings
+        )
         candidates.append(
             StationCandidate(
                 station_id=station.id,
@@ -188,6 +242,9 @@ def _select_station_for_vehicle(
                 detour_km=max(0.0, detour_km),
                 queue_length=station.queue_length,
                 rating=station.rating,
+                upgrade_score=upgrade_score,
+                advertising_score=advertising_score,
+                loyalty_score=loyalty_score,
             )
         )
         stations_by_id[station.id] = station
@@ -372,6 +429,7 @@ class VehiclePurchaseResult:
     fuel_type: FuelType
     liters: Decimal
     total_amount: Decimal
+    ancillary_amount: Decimal = Decimal("0")
 
 
 @dataclass(frozen=True)
@@ -386,7 +444,7 @@ def _clamp_rating(rating: float) -> float:
 
 
 async def _complete_purchase(
-    db: AsyncSession, vehicle: Vehicle, settings: GameSettings
+    db: AsyncSession, vehicle: Vehicle, settings: GameSettings, rng: random.Random
 ) -> VehiclePurchaseResult | None:
     """Vehicle purchase per TECHNICAL_SPEC.md section 17: real stock/money transfer."""
     assert vehicle.chosen_station_id is not None
@@ -480,6 +538,8 @@ async def _complete_purchase(
         )
     )
 
+    ancillary_amount = await _apply_ancillary_revenue(db, station, player, settings, rng)
+
     return VehiclePurchaseResult(
         vehicle_id=vehicle.id,
         station_id=station.id,
@@ -487,10 +547,68 @@ async def _complete_purchase(
         fuel_type=vehicle.fuel_type,
         liters=purchasable,
         total_amount=total_amount,
+        ancillary_amount=ancillary_amount,
     )
 
 
-async def update_vehicles_for_game(db: AsyncSession, game_id: uuid.UUID) -> VehicleTickResult:
+async def _apply_ancillary_revenue(
+    db: AsyncSession,
+    station: GameStation,
+    player: GamePlayer,
+    settings: GameSettings,
+    rng: random.Random,
+) -> Decimal:
+    """Extra revenue from shop/food-court/car-wash upgrades (section 19.1-19.3).
+
+    Car wash revenue is probabilistic (not every vehicle visits it); shop and
+    food court revenue is earned on every fuel purchase at the station.
+    """
+    levels = await get_active_upgrade_levels(db, station.id)
+
+    amount = Decimal("0")
+    shop_level = levels.get(UpgradeType.SHOP, 0)
+    if shop_level:
+        amount += settings.station_upgrades[UpgradeType.SHOP.value].revenue_per_level * shop_level
+
+    food_court_level = levels.get(UpgradeType.FOOD_COURT, 0)
+    if food_court_level:
+        amount += (
+            settings.station_upgrades[UpgradeType.FOOD_COURT.value].revenue_per_level
+            * food_court_level
+        )
+
+    car_wash_level = levels.get(UpgradeType.CAR_WASH, 0)
+    if car_wash_level and rng.random() < settings.car_wash_visit_probability:
+        amount += (
+            settings.station_upgrades[UpgradeType.CAR_WASH.value].revenue_per_level * car_wash_level
+        )
+
+    if amount <= Decimal("0"):
+        return Decimal("0")
+
+    amount = amount.quantize(_CENTS, rounding=ROUND_HALF_UP)
+    balance_before = player.balance
+    balance_after = balance_before + amount
+    player.balance = balance_after
+
+    db.add(
+        FinancialTransaction(
+            game_id=station.game_id,
+            player_id=player.id,
+            transaction_type=TRANSACTION_TYPE_ANCILLARY_REVENUE,
+            amount=amount,
+            balance_before=balance_before,
+            balance_after=balance_after,
+            reference_type="station_ancillary",
+            reference_id=station.id,
+        )
+    )
+    return amount
+
+
+async def update_vehicles_for_game(
+    db: AsyncSession, game_id: uuid.UUID, *, rng: random.Random | None = None
+) -> VehicleTickResult:
     """Advance every active vehicle: drive, queue at a chosen station, buy fuel, arrive.
 
     Called from the scheduler's batch loop (no background task per vehicle).
@@ -498,6 +616,7 @@ async def update_vehicles_for_game(db: AsyncSession, game_id: uuid.UUID) -> Vehi
     route, exactly like trucks — the client interpolates between periodic
     corrections instead of receiving a position every frame.
     """
+    rng = rng or random.Random()
     now = datetime.now(UTC)
 
     game = (await db.execute(select(GameRoom).where(GameRoom.id == game_id))).scalar_one_or_none()
@@ -516,7 +635,7 @@ async def update_vehicles_for_game(db: AsyncSession, game_id: uuid.UUID) -> Vehi
             if vehicle.station_departure_at is None or now < vehicle.station_departure_at:
                 continue
 
-            purchase = await _complete_purchase(db, vehicle, settings)
+            purchase = await _complete_purchase(db, vehicle, settings, rng)
             if purchase is not None:
                 purchases.append(purchase)
 
@@ -561,15 +680,27 @@ async def update_vehicles_for_game(db: AsyncSession, game_id: uuid.UUID) -> Vehi
                 if station is None or station.queue_length >= settings.vehicle_max_queue_length:
                     vehicle.chosen_station_id = None
                 else:
+                    upgrade_levels = await get_active_upgrade_levels(db, station.id)
+                    active_pumps = (
+                        settings.station_pump_count
+                        + upgrade_levels.get(UpgradeType.PUMPS, 0)
+                        * settings.station_upgrades[UpgradeType.PUMPS.value].bonus_per_level
+                    )
+                    food_court_bonus_minutes = (
+                        upgrade_levels.get(UpgradeType.FOOD_COURT, 0)
+                        * settings.station_upgrades[UpgradeType.FOOD_COURT.value].bonus_per_level
+                    )
+
                     waiting_time = (
-                        station.queue_length
-                        * settings.vehicle_average_service_minutes
-                        / settings.station_pump_count
+                        station.queue_length * settings.vehicle_average_service_minutes
+                    ) / active_pumps
+                    service_minutes = (
+                        settings.vehicle_average_service_minutes + food_court_bonus_minutes
                     )
                     station.queue_length += 1
                     vehicle.status = VehicleStatus.REFUELING
                     vehicle.station_departure_at = now + timedelta(
-                        minutes=waiting_time + settings.vehicle_average_service_minutes
+                        minutes=waiting_time + service_minutes
                     )
                     vehicle.current_latitude = station_point["latitude"]
                     vehicle.current_longitude = station_point["longitude"]

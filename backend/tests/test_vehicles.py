@@ -6,6 +6,7 @@ from decimal import Decimal
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.db.models.financial_transaction import FinancialTransaction
 from app.db.models.fuel_sale import FuelSale
 from app.db.models.game_player import GamePlayer
 from app.db.models.game_room import GameRoom
@@ -15,6 +16,7 @@ from app.db.models.road_edge import RoadEdge
 from app.db.models.road_node import RoadNode
 from app.db.models.station_fuel import FuelType, StationFuel
 from app.db.models.station_template import StationTemplate
+from app.db.models.station_upgrade import StationUpgrade, UpgradeStatus, UpgradeType
 from app.db.models.vehicle import DriverType, Vehicle, VehicleStatus
 from app.db.session import async_session_factory
 from app.schemas.auth import RegisterRequest
@@ -23,6 +25,7 @@ from app.schemas.game_settings import GameSettings
 from app.services import routing_service, station_service
 from app.services.auth_service import register_user
 from app.services.game_service import create_game, start_game
+from app.services.station_upgrade_service import purchase_upgrade
 from app.simulation import vehicles as vehicles_module
 from app.simulation.vehicles import (
     DriverProfile,
@@ -512,3 +515,151 @@ async def test_update_vehicles_skips_purchase_on_stockout_and_lowers_rating(
         station = await db.get(GameStation, station_id)
         assert station is not None
         assert station.rating < 5.0
+
+
+def test_compute_station_score_rewards_active_upgrades() -> None:
+    settings = GameSettings()
+    base = StationCandidate(
+        station_id=uuid.uuid4(),
+        retail_price=Decimal("50.00"),
+        detour_km=1.0,
+        queue_length=0,
+        rating=4.0,
+    )
+    boosted = StationCandidate(
+        station_id=uuid.uuid4(),
+        retail_price=Decimal("50.00"),
+        detour_km=1.0,
+        queue_length=0,
+        rating=4.0,
+        upgrade_score=1.0,
+        advertising_score=1.0,
+        loyalty_score=1.0,
+    )
+    profile = _profile()
+
+    base_score = compute_station_score(
+        base,
+        cheapest_available_price=Decimal("50.00"),
+        profile=profile,
+        settings=settings,
+        random_factor=0.0,
+    )
+    boosted_score = compute_station_score(
+        boosted,
+        cheapest_available_price=Decimal("50.00"),
+        profile=profile,
+        settings=settings,
+        random_factor=0.0,
+    )
+    assert boosted_score > base_score
+
+
+async def _owner_user_id(game_id: uuid.UUID) -> uuid.UUID:
+    async with async_session_factory() as db:
+        player = (
+            await db.execute(select(GamePlayer).where(GamePlayer.game_id == game_id))
+        ).scalar_one()
+        return player.user_id
+
+
+async def _activate_upgrade(
+    game_id: uuid.UUID, station_id: uuid.UUID, upgrade_type: UpgradeType
+) -> None:
+    owner_id = await _owner_user_id(game_id)
+    async with async_session_factory() as db:
+        upgrade = await purchase_upgrade(db, game_id, owner_id, station_id, upgrade_type)
+        upgrade_id = upgrade.id
+    async with async_session_factory() as db:
+        upgrade = await db.get(StationUpgrade, upgrade_id)
+        assert upgrade is not None
+        upgrade.status = UpgradeStatus.ACTIVE
+        await db.commit()
+
+
+async def test_update_vehicles_applies_shop_ancillary_revenue_on_purchase(
+    db_session: AsyncSession,
+) -> None:
+    game_id, station_id = await _setup_running_game_with_owned_station("VehicleShopUpgrade")
+    await _activate_upgrade(game_id, station_id, UpgradeType.SHOP)
+
+    async with async_session_factory() as db:
+        home_node, _station_node, dest_node, route_json = await _build_route_via_station(db)
+        vehicle = await _insert_vehicle(
+            db,
+            game_id=game_id,
+            home_node=home_node,
+            dest_node=dest_node,
+            route_json=route_json,
+            started_at=datetime.now(UTC) - timedelta(minutes=16),
+            fuel_liters=Decimal("5"),
+            chosen_station_id=station_id,
+        )
+        vehicle_id = vehicle.id
+
+    async with async_session_factory() as db:
+        await update_vehicles_for_game(db, game_id)
+
+    async with async_session_factory() as db:
+        vehicle = await db.get(Vehicle, vehicle_id)
+        assert vehicle is not None
+        vehicle.station_departure_at = datetime.now(UTC) - timedelta(seconds=1)
+        await db.commit()
+
+    async with async_session_factory() as db:
+        result = await update_vehicles_for_game(db, game_id)
+
+    assert len(result.purchases) == 1
+    assert result.purchases[0].ancillary_amount > Decimal("0")
+
+    async with async_session_factory() as db:
+        ancillary_transactions = (
+            (
+                await db.execute(
+                    select(FinancialTransaction).where(
+                        FinancialTransaction.reference_type == "station_ancillary"
+                    )
+                )
+            )
+            .scalars()
+            .all()
+        )
+        assert len(ancillary_transactions) == 1
+        assert ancillary_transactions[0].amount > Decimal("0")
+
+
+async def test_update_vehicles_food_court_upgrade_increases_dwell_time(
+    db_session: AsyncSession,
+) -> None:
+    game_id, station_id = await _setup_running_game_with_owned_station("VehicleFoodCourt")
+    await _activate_upgrade(game_id, station_id, UpgradeType.FOOD_COURT)
+
+    async with async_session_factory() as db:
+        home_node, _station_node, dest_node, route_json = await _build_route_via_station(db)
+        vehicle = await _insert_vehicle(
+            db,
+            game_id=game_id,
+            home_node=home_node,
+            dest_node=dest_node,
+            route_json=route_json,
+            started_at=datetime.now(UTC) - timedelta(minutes=16),
+            fuel_liters=Decimal("5"),
+            chosen_station_id=station_id,
+        )
+        vehicle_id = vehicle.id
+
+    baseline_settings = GameSettings()
+    baseline_service_minutes = baseline_settings.vehicle_average_service_minutes
+
+    async with async_session_factory() as db:
+        await update_vehicles_for_game(db, game_id)
+
+    async with async_session_factory() as db:
+        vehicle = await db.get(Vehicle, vehicle_id)
+        assert vehicle is not None
+        assert vehicle.status == VehicleStatus.REFUELING
+        assert vehicle.station_departure_at is not None
+        wait_minutes = (vehicle.station_departure_at - datetime.now(UTC)).total_seconds() / 60.0
+        # No queue ahead of this vehicle, so the departure delay is purely the
+        # (boosted) service time; food court adds bonus_per_level minutes on top.
+        assert wait_minutes > baseline_service_minutes
