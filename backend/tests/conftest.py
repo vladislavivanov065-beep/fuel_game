@@ -5,10 +5,14 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.redis import redis_client
 from app.db.models.financial_transaction import FinancialTransaction
+from app.db.models.fuel_order import FuelOrder
+from app.db.models.fuel_order_stop import FuelOrderStop
+from app.db.models.fuel_sale import FuelSale
 from app.db.models.game_player import GamePlayer
 from app.db.models.game_room import GameRoom
 from app.db.models.game_station import GameStation
 from app.db.models.refinery import Refinery
+from app.db.models.refinery_fuel import RefineryFuel
 from app.db.models.station_fuel import StationFuel
 from app.db.models.station_template import StationTemplate
 from app.db.models.user import User
@@ -32,8 +36,12 @@ async def db_session() -> AsyncSession:
 async def _wipe_database() -> None:
     async with async_session_factory() as db:
         await db.execute(delete(FinancialTransaction))
+        await db.execute(delete(FuelOrderStop))
+        await db.execute(delete(FuelOrder))
+        await db.execute(delete(FuelSale))
         await db.execute(delete(StationFuel))
         await db.execute(delete(GameStation))
+        await db.execute(delete(RefineryFuel))
         await db.execute(delete(GamePlayer))
         await db.execute(delete(GameRoom))
         await db.execute(delete(StationTemplate))

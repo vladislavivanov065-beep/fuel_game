@@ -3,10 +3,47 @@ from datetime import datetime
 from decimal import Decimal
 from typing import TYPE_CHECKING
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
+
+from app.db.models.station_fuel import FuelType
 
 if TYPE_CHECKING:
     from app.db.models.game_station import GameStation
+    from app.db.models.station_fuel import StationFuel
+
+
+class SetStationPriceRequest(BaseModel):
+    fuel_type: FuelType
+    retail_price: Decimal = Field(gt=0)
+
+
+class SetNetworkPriceRequest(BaseModel):
+    fuel_type: FuelType
+    retail_price: Decimal = Field(gt=0)
+
+
+class StationFuelResponse(BaseModel):
+    id: uuid.UUID
+    fuel_type: FuelType
+    current_liters: Decimal
+    reserved_liters: Decimal
+    capacity_liters: Decimal
+    retail_price: Decimal
+    average_purchase_price: Decimal
+    price_updated_at: datetime | None
+
+    @classmethod
+    def from_model(cls, fuel: "StationFuel") -> "StationFuelResponse":
+        return cls(
+            id=fuel.id,
+            fuel_type=fuel.fuel_type,
+            current_liters=fuel.current_liters,
+            reserved_liters=fuel.reserved_liters,
+            capacity_liters=fuel.capacity_liters,
+            retail_price=fuel.retail_price,
+            average_purchase_price=fuel.average_purchase_price,
+            price_updated_at=fuel.price_updated_at,
+        )
 
 
 class GameStationResponse(BaseModel):
@@ -26,6 +63,7 @@ class GameStationResponse(BaseModel):
     rating: float
     queue_length: int
     created_at: datetime
+    fuels: list[StationFuelResponse]
 
     @classmethod
     def from_model(cls, station: "GameStation") -> "GameStationResponse":
@@ -47,4 +85,5 @@ class GameStationResponse(BaseModel):
             rating=station.rating,
             queue_length=station.queue_length,
             created_at=station.created_at,
+            fuels=[StationFuelResponse.from_model(fuel) for fuel in station.fuels],
         )

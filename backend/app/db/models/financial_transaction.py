@@ -9,6 +9,8 @@ from sqlalchemy.orm import Mapped, mapped_column
 from app.db.base import Base
 
 TRANSACTION_TYPE_STATION_PURCHASE = "station_purchase"
+TRANSACTION_TYPE_FUEL_SALE = "fuel_sale"
+TRANSACTION_TYPE_FUEL_ORDER = "fuel_order"
 
 
 class FinancialTransaction(Base):

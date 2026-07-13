@@ -7,11 +7,12 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
+from app.db.models.financial_transaction import FinancialTransaction
 from app.db.models.game_player import GamePlayer
 from app.db.models.game_room import GameRoom, GameStatus
 from app.schemas.game import CreateGameRequest
 from app.schemas.game_settings import GameSettings
-from app.services import station_service
+from app.services import refinery_service, station_service
 
 _INVITE_CODE_ALPHABET = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"
 _INVITE_CODE_LENGTH = 8
@@ -211,6 +212,19 @@ async def get_network(db: AsyncSession, game_id: uuid.UUID, user_id: uuid.UUID) 
     return player
 
 
+async def list_my_transactions(
+    db: AsyncSession, game_id: uuid.UUID, user_id: uuid.UUID
+) -> list[FinancialTransaction]:
+    player = await get_network(db, game_id, user_id)
+
+    stmt = (
+        select(FinancialTransaction)
+        .where(FinancialTransaction.player_id == player.id)
+        .order_by(FinancialTransaction.created_at)
+    )
+    return list((await db.execute(stmt)).scalars().all())
+
+
 async def start_game(db: AsyncSession, game_id: uuid.UUID, user_id: uuid.UUID) -> GameRoom:
     game = (await db.execute(select(GameRoom).where(GameRoom.id == game_id))).scalar_one_or_none()
     if game is None:
@@ -238,6 +252,7 @@ async def start_game(db: AsyncSession, game_id: uuid.UUID, user_id: uuid.UUID) -
         .values(balance=room_settings.starting_balance)
     )
     await station_service.create_game_stations_for_game(db, game_id, room_settings)
+    await refinery_service.create_refinery_fuels_for_game(db, game_id, room_settings)
     await db.commit()
 
     return await get_game_for_member(db, game_id, user_id)

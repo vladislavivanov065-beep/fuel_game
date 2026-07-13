@@ -7,6 +7,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.api.deps import require_current_user
 from app.db.models.user import User
 from app.db.session import get_db_session
+from app.schemas.finance import FinancialTransactionResponse
 from app.schemas.game import (
     CreateGameRequest,
     GameDetailResponse,
@@ -17,7 +18,8 @@ from app.schemas.game import (
     SetNetworkRequest,
     SetReadyRequest,
 )
-from app.services import game_service
+from app.schemas.station import SetNetworkPriceRequest
+from app.services import game_service, station_service
 from app.websocket.connection_manager import connection_manager
 
 router = APIRouter(prefix="/api/games", tags=["games"])
@@ -287,3 +289,59 @@ async def get_network(
         is_admin=player.is_admin,
         joined_at=player.joined_at,
     )
+
+
+@router.patch("/{game_id}/network/prices", status_code=status.HTTP_200_OK)
+async def set_network_price(
+    game_id: uuid.UUID,
+    data: SetNetworkPriceRequest,
+    user: Annotated[User, Depends(require_current_user)],
+    db: Annotated[AsyncSession, Depends(get_db_session)],
+) -> dict[str, int]:
+    try:
+        updated_count = await station_service.set_network_fuel_price(
+            db, game_id, user.id, data.fuel_type, data.retail_price
+        )
+    except station_service.GameNotFoundError as exc:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Game not found") from exc
+    except station_service.GameNotRunningError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT, detail="Game is not running"
+        ) from exc
+    except station_service.NotAGameMemberError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN, detail="You are not a member of this game"
+        ) from exc
+    except station_service.PriceOutOfBoundsError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+            detail="Price is out of allowed bounds",
+        ) from exc
+
+    await connection_manager.broadcast(
+        game_id,
+        "station.price_changed",
+        {
+            "fuel_type": data.fuel_type.value,
+            "retail_price": str(data.retail_price),
+            "updated_stations": updated_count,
+        },
+    )
+
+    return {"updated_stations": updated_count}
+
+
+@router.get("/{game_id}/me/transactions", response_model=list[FinancialTransactionResponse])
+async def list_my_transactions(
+    game_id: uuid.UUID,
+    user: Annotated[User, Depends(require_current_user)],
+    db: Annotated[AsyncSession, Depends(get_db_session)],
+) -> list[FinancialTransactionResponse]:
+    try:
+        transactions = await game_service.list_my_transactions(db, game_id, user.id)
+    except game_service.NotAGameMemberError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN, detail="You are not a member of this game"
+        ) from exc
+
+    return [FinancialTransactionResponse.from_model(t) for t in transactions]
