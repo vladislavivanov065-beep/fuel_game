@@ -1,5 +1,6 @@
 from functools import lru_cache
 
+from pydantic import field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -10,6 +11,18 @@ class Settings(BaseSettings):
     environment: str = "development"
 
     database_url: str = "postgresql+asyncpg://gaswars:gaswars@localhost:5432/gaswars"
+
+    @field_validator("database_url")
+    @classmethod
+    def _require_asyncpg_driver(cls, value: str) -> str:
+        # Managed Postgres providers (Railway, Heroku, ...) hand out a bare
+        # postgres(ql):// URL with no driver, which SQLAlchemy resolves to
+        # the sync psycopg2 dialect. Force the asyncpg driver we actually need.
+        if value.startswith("postgres://"):
+            return "postgresql+asyncpg://" + value.removeprefix("postgres://")
+        if value.startswith("postgresql://"):
+            return "postgresql+asyncpg://" + value.removeprefix("postgresql://")
+        return value
 
     cors_origins: list[str] = ["http://localhost:5173"]
 
