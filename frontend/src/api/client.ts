@@ -12,7 +12,6 @@ export class ApiError extends Error {
 export interface HealthResponse {
   status: string
   database: string
-  redis: string
 }
 
 export async function fetchHealth(): Promise<HealthResponse> {

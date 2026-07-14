@@ -3,7 +3,7 @@ from httpx import ASGITransport, AsyncClient
 from sqlalchemy import delete
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.redis import redis_client
+from app.core.rate_limit import reset_rate_limits
 from app.db.models.financial_transaction import FinancialTransaction
 from app.db.models.fuel_order import FuelOrder
 from app.db.models.fuel_order_stop import FuelOrderStop
@@ -16,6 +16,7 @@ from app.db.models.refinery import Refinery
 from app.db.models.refinery_fuel import RefineryFuel
 from app.db.models.road_edge import RoadEdge
 from app.db.models.road_node import RoadNode
+from app.db.models.session import Session
 from app.db.models.station_fuel import StationFuel
 from app.db.models.station_template import StationTemplate
 from app.db.models.station_upgrade import StationUpgrade
@@ -58,17 +59,14 @@ async def _wipe_database() -> None:
         await db.execute(delete(Refinery))
         await db.execute(delete(RoadEdge))
         await db.execute(delete(RoadNode))
+        await db.execute(delete(Session))
         await db.execute(delete(User))
         await db.commit()
-
-    keys = await redis_client.keys("session:*")
-    keys += await redis_client.keys("rate_limit:*")
-    if keys:
-        await redis_client.delete(*keys)
 
 
 @pytest.fixture(autouse=True)
 async def clean_state() -> None:
+    reset_rate_limits()
     await _wipe_database()
     yield
     await _wipe_database()

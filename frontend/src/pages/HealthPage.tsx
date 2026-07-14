@@ -36,7 +36,6 @@ export function HealthPage() {
         <ul>
           <li>Overall: {data.status}</li>
           <li>Database: {data.database}</li>
-          <li>Redis: {data.redis}</li>
         </ul>
       )}
     </main>

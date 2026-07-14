@@ -8,4 +8,3 @@ async def test_health_returns_ok(client: AsyncClient) -> None:
     body = response.json()
     assert body["status"] == "ok"
     assert body["database"] == "ok"
-    assert body["redis"] == "ok"

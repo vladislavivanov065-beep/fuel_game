@@ -1,32 +1,34 @@
 import secrets
 import uuid
+from datetime import UTC, datetime, timedelta
+
+from sqlalchemy import delete, select
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import get_settings
-from app.core.redis import redis_client
+from app.db.models.session import Session
 
 settings = get_settings()
 
-_SESSION_KEY_PREFIX = "session:"
 
-
-def _session_key(token: str) -> str:
-    return f"{_SESSION_KEY_PREFIX}{token}"
-
-
-async def create_session(user_id: uuid.UUID) -> str:
+async def create_session(db: AsyncSession, user_id: uuid.UUID) -> str:
     token = secrets.token_urlsafe(32)
-    await redis_client.set(_session_key(token), str(user_id), ex=settings.session_ttl_seconds)
+    expires_at = datetime.now(UTC) + timedelta(seconds=settings.session_ttl_seconds)
+    db.add(Session(token=token, user_id=user_id, expires_at=expires_at))
+    await db.commit()
     return token
 
 
-async def get_session_user_id(token: str) -> uuid.UUID | None:
-    raw_user_id = await redis_client.get(_session_key(token))
-    if raw_user_id is None:
+async def get_session_user_id(db: AsyncSession, token: str) -> uuid.UUID | None:
+    result = await db.execute(select(Session).where(Session.token == token))
+    session = result.scalar_one_or_none()
+    if session is None:
         return None
-    if isinstance(raw_user_id, bytes):
-        raw_user_id = raw_user_id.decode()
-    return uuid.UUID(raw_user_id)
+    if session.expires_at < datetime.now(UTC):
+        return None
+    return session.user_id
 
 
-async def delete_session(token: str) -> None:
-    await redis_client.delete(_session_key(token))
+async def delete_session(db: AsyncSession, token: str) -> None:
+    await db.execute(delete(Session).where(Session.token == token))
+    await db.commit()

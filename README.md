@@ -6,10 +6,12 @@
 
 ## Стек
 
-- Backend: Python 3.12, FastAPI, SQLAlchemy 2 (async), Alembic, PostgreSQL, Redis
+- Backend: Python 3.12, FastAPI, SQLAlchemy 2 (async), Alembic, PostgreSQL
 - Frontend: React, TypeScript, Vite, TanStack Query, Zustand
 
-## Локальный запуск (без Docker)
+## Локальный запуск
+
+Нужен только PostgreSQL (например `postgres:16`, поднятый локально или в отдельном контейнере).
 
 ### Backend
 
@@ -20,10 +22,18 @@ source .venv/bin/activate
 pip install -e ".[dev]"
 cp .env.example .env   # при необходимости отредактируйте значения
 alembic upgrade head
+python -m scripts.import_osm        # станции из data/mari_el_stations.geojson
+python -m scripts.seed_game_data    # НПЗ
+python -m scripts.build_road_graph  # дорожный граф из data/mari_el_roads.geojson
 uvicorn app.main:app --reload
 ```
 
 Backend поднимется на `http://localhost:8000`, health-check: `GET /api/health`.
+
+Три сид-команды идемпотентны — их безопасно перезапускать. Их также можно
+выполнить одной командой через `python -m scripts.release` (сначала
+`alembic upgrade head`, затем все три скрипта по очереди) — это же используется
+как pre-deploy команда на Railway (см. `backend/railway.json`).
 
 ### Frontend
 
@@ -35,14 +45,6 @@ npm run dev
 ```
 
 Frontend поднимется на `http://localhost:5173`.
-
-## Запуск через Docker Compose
-
-```bash
-docker compose up --build
-```
-
-Поднимает PostgreSQL, Redis, backend (`:8000`) и frontend (`:5173`).
 
 ## Проверки качества
 
