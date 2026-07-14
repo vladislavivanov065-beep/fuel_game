@@ -17,7 +17,7 @@ def _run(*args: str) -> None:
 
 
 def main() -> None:
-    _run("alembic", "upgrade", "head")
+    _run(sys.executable, "-m", "alembic", "upgrade", "head")
     _run(sys.executable, "-m", "scripts.import_osm")
     _run(sys.executable, "-m", "scripts.seed_game_data")
     _run(sys.executable, "-m", "scripts.build_road_graph")
