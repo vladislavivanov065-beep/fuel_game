@@ -1,8 +1,8 @@
 """Build the road graph from a prepared GeoJSON file of road segments.
 
 This script reads a local GeoJSON file only — it never calls any external
-mapping API. Prepare the GeoJSON file in advance (e.g. from an OSM export)
-and run this script manually; it is not invoked automatically at app startup.
+mapping API. Prepare the GeoJSON file in advance (e.g. from an OSM export).
+Also runs automatically on every app startup via app.core.release.
 
 Usage:
     python -m scripts.build_road_graph [path/to/roads.geojson]
