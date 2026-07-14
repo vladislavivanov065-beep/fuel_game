@@ -4,8 +4,7 @@
     "builder": "RAILPACK"
   },
   "deploy": {
-    "startCommand": "/app/.venv/bin/uvicorn app.main:app --host 0.0.0.0 --port $PORT",
-    "preDeployCommand": "/app/.venv/bin/python -m scripts.release",
+    "startCommand": "uvicorn app.main:app --host 0.0.0.0 --port $PORT",
     "restartPolicyType": "ON_FAILURE"
   }
 }

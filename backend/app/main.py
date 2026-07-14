@@ -13,6 +13,7 @@ from app.api.map import router as map_router
 from app.api.stations import router as stations_router
 from app.api.vehicles import router as vehicles_router
 from app.core.config import get_settings
+from app.core.release import run_release_tasks
 from app.simulation import scheduler
 from app.websocket.game_ws import router as game_ws_router
 
@@ -21,6 +22,7 @@ settings = get_settings()
 
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncIterator[None]:
+    await run_release_tasks()
     scheduler.start()
     yield
     await scheduler.stop()
