@@ -10,7 +10,7 @@ from app.db.models.truck import Truck
 from app.db.models.vehicle import Vehicle
 from app.db.session import async_session_factory
 from app.schemas.game_settings import GameSettings
-from app.simulation import economy, events, station_upgrades, trucks, vehicles
+from app.simulation import economy, events, station_upgrades, trades, trucks, vehicles
 from app.websocket.connection_manager import connection_manager
 
 logger = logging.getLogger(__name__)
@@ -273,6 +273,18 @@ async def _expire_events(game_id: uuid.UUID) -> None:
         await connection_manager.broadcast(game_id, "game_event.ended", {"event_id": str(event_id)})
 
 
+async def _expire_trade_offers(game_id: uuid.UUID) -> None:
+    async with async_session_factory() as db:
+        try:
+            expired_ids = await trades.expire_due_trade_offers_for_game(db, game_id)
+        except Exception:
+            logger.exception("Trade offer expiry failed for game %s", game_id)
+            return
+
+    for trade_id in expired_ids:
+        await connection_manager.broadcast(game_id, "trade.expired", {"trade_id": str(trade_id)})
+
+
 async def _run_tick_cycle() -> None:
     now = datetime.now(UTC)
     games = await _running_games()
@@ -299,6 +311,7 @@ async def _run_tick_cycle() -> None:
         await _update_vehicles(game.id, now)
         await _update_station_upgrades(game.id)
         await _expire_events(game.id)
+        await _expire_trade_offers(game.id)
 
 
 async def _run_forever() -> None:

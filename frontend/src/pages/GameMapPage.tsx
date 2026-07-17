@@ -23,6 +23,7 @@ import { EventsPanel } from '../components/EventsPanel'
 import { FuelOrdersPanel } from '../components/FuelOrdersPanel'
 import { IncomeChart } from '../components/IncomeChart'
 import { StationUpgradesPanel } from '../components/StationUpgradesPanel'
+import { TradesPanel } from '../components/TradesPanel'
 import {
   MARI_EL_BOUNDS,
   MARI_EL_CENTER,
@@ -475,6 +476,18 @@ export function GameMapPage() {
       void queryClient.invalidateQueries({ queryKey: ['game', gameId] })
       void queryClient.invalidateQueries({ queryKey: ['transactions', gameId] })
     }
+    if (
+      event.event === 'trade.created' ||
+      event.event === 'trade.accepted' ||
+      event.event === 'trade.rejected' ||
+      event.event === 'trade.cancelled' ||
+      event.event === 'trade.expired'
+    ) {
+      void queryClient.invalidateQueries({ queryKey: ['trades', gameId] })
+      void queryClient.invalidateQueries({ queryKey: ['gameStations', gameId] })
+      void queryClient.invalidateQueries({ queryKey: ['game', gameId] })
+      void queryClient.invalidateQueries({ queryKey: ['transactions', gameId] })
+    }
   })
 
   function refreshAfterOrder(): void {
@@ -614,6 +627,20 @@ export function GameMapPage() {
       </div>
 
       {gameId && <EventsPanel gameId={gameId} isAdmin={isAdmin} />}
+
+      {gameId && (
+        <TradesPanel
+          gameId={gameId}
+          myPlayerId={myPlayerId}
+          myUserId={user?.id}
+          myStations={myStations}
+          otherPlayers={
+            game?.players
+              .filter((p) => p.user_id !== user?.id)
+              .map((p) => ({ userId: p.user_id, displayName: p.display_name })) ?? []
+          }
+        />
+      )}
 
       {gameId && ownsAnyStation && (
         <NetworkPriceEditor gameId={gameId} onSaved={refreshAfterPriceChange} />

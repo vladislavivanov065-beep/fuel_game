@@ -14,6 +14,8 @@ TRANSACTION_TYPE_FUEL_ORDER = "fuel_order"
 TRANSACTION_TYPE_STATION_UPGRADE = "station_upgrade"
 TRANSACTION_TYPE_ANCILLARY_REVENUE = "ancillary_revenue"
 TRANSACTION_TYPE_EVENT_FINE = "event_fine"
+TRANSACTION_TYPE_TRADE_STATION_SALE = "trade_station_sale"
+TRANSACTION_TYPE_TRADE_FUEL_SALE = "trade_fuel_sale"
 
 
 class FinancialTransaction(Base):
