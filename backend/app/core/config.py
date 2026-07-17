@@ -1,7 +1,9 @@
+import json
 from functools import lru_cache
+from typing import Annotated
 
 from pydantic import field_validator
-from pydantic_settings import BaseSettings, SettingsConfigDict
+from pydantic_settings import BaseSettings, NoDecode, SettingsConfigDict
 
 
 class Settings(BaseSettings):
@@ -24,7 +26,20 @@ class Settings(BaseSettings):
             return "postgresql+asyncpg://" + value.removeprefix("postgresql://")
         return value
 
-    cors_origins: list[str] = ["http://localhost:5173"]
+    cors_origins: Annotated[list[str], NoDecode] = ["http://localhost:5173"]
+
+    @field_validator("cors_origins", mode="before")
+    @classmethod
+    def _parse_cors_origins(cls, value: object) -> object:
+        # Accept either a JSON array (`["https://a", "https://b"]`) or a plain
+        # comma-separated string (`https://a,https://b`) — deployment UIs
+        # (Railway, ...) invite typing a bare value with no JSON syntax.
+        if isinstance(value, str):
+            stripped = value.strip()
+            if stripped.startswith("["):
+                return json.loads(stripped)
+            return [origin.strip() for origin in stripped.split(",") if origin.strip()]
+        return value
 
     session_cookie_name: str = "session_id"
     session_ttl_seconds: int = 60 * 60 * 24 * 7

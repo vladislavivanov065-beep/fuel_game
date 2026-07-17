@@ -25,7 +25,11 @@ def _set_session_cookie(response: Response, token: str) -> None:
         value=token,
         httponly=True,
         secure=settings.session_cookie_secure,
-        samesite="lax",
+        # Browsers reject SameSite=None without Secure, and frontend/backend
+        # sit on different subdomains in production, so a cross-site fetch
+        # would never carry a Lax cookie back — tie the two together instead
+        # of hardcoding "lax", which broke sessions on split-domain deploys.
+        samesite="none" if settings.session_cookie_secure else "lax",
         max_age=settings.session_ttl_seconds,
         path="/",
     )
