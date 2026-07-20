@@ -21,12 +21,109 @@ export const truckIcon = L.divIcon({
   iconAnchor: [6, 6],
 })
 
-export const vehicleIcon = L.divIcon({
-  className: 'vehicle-marker',
-  html: '<div style="width:7px;height:7px;border-radius:50%;background:#1976d2;border:1px solid #0d3c73;"></div>',
-  iconSize: [7, 7],
-  iconAnchor: [4, 4],
-})
+interface VehicleTypeShape {
+  width: number
+  height: number
+  color: string
+  borderColor: string
+  borderRadius: string
+  isEmergency: boolean
+}
+
+const VEHICLE_TYPE_SHAPES: Record<string, VehicleTypeShape> = {
+  hatchback: {
+    width: 8,
+    height: 5,
+    color: '#1976d2',
+    borderColor: '#0d3c73',
+    borderRadius: '2px',
+    isEmergency: false,
+  },
+  jeep: {
+    width: 9,
+    height: 6,
+    color: '#4a5f3a',
+    borderColor: '#28351f',
+    borderRadius: '2px',
+    isEmergency: false,
+  },
+  pickup: {
+    width: 10,
+    height: 5,
+    color: '#8d6e63',
+    borderColor: '#4e342e',
+    borderRadius: '1px',
+    isEmergency: false,
+  },
+  motorcycle: {
+    width: 5,
+    height: 3,
+    color: '#212121',
+    borderColor: '#000000',
+    borderRadius: '2px',
+    isEmergency: false,
+  },
+  marshrutka: {
+    width: 12,
+    height: 6,
+    color: '#fdd835',
+    borderColor: '#8a7000',
+    borderRadius: '1px',
+    isEmergency: false,
+  },
+  cargo_truck: {
+    width: 14,
+    height: 6,
+    color: '#6d4c41',
+    borderColor: '#3e2723',
+    borderRadius: '1px',
+    isEmergency: false,
+  },
+  trolleybus: {
+    width: 15,
+    height: 6,
+    color: '#00897b',
+    borderColor: '#004d40',
+    borderRadius: '1px',
+    isEmergency: false,
+  },
+  ambulance: {
+    width: 10,
+    height: 6,
+    color: '#f5f5f5',
+    borderColor: '#c62828',
+    borderRadius: '1px',
+    isEmergency: true,
+  },
+  police: {
+    width: 9,
+    height: 6,
+    color: '#1a237e',
+    borderColor: '#0d1450',
+    borderRadius: '2px',
+    isEmergency: true,
+  },
+  fire_truck: {
+    width: 13,
+    height: 6,
+    color: '#e53935',
+    borderColor: '#8e0000',
+    borderRadius: '1px',
+    isEmergency: true,
+  },
+}
+
+export function vehicleIconForType(vehicleType: string, heading: number): L.DivIcon {
+  const shape = VEHICLE_TYPE_SHAPES[vehicleType] ?? VEHICLE_TYPE_SHAPES.hatchback
+  const size = Math.max(shape.width, shape.height) + 4
+  const className = shape.isEmergency ? 'vehicle-marker-typed vehicle-marker-emergency' : 'vehicle-marker-typed'
+  return L.divIcon({
+    className,
+    html: `<div style="width:${shape.width}px;height:${shape.height}px;background:${shape.color};border:1px solid ${shape.borderColor};border-radius:${shape.borderRadius};transform:rotate(${heading}deg);"></div>`,
+    iconSize: [size, size],
+    iconAnchor: [size / 2, size / 2],
+  })
+}
 
 const HEX_COLOR_PATTERN = /^#[0-9A-Fa-f]{6}$/
 

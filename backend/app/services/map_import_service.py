@@ -1,4 +1,5 @@
 import json
+import random
 from dataclasses import dataclass
 from decimal import Decimal
 from itertools import pairwise
@@ -10,7 +11,20 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.db.models.road_edge import RoadEdge
 from app.db.models.road_node import RoadNode
 from app.db.models.station_template import StationTemplate
+from app.db.models.traffic_light import TrafficLight
 from app.services.routing_service import haversine_km
+
+# An intersection (not a pass-through point) is a node touching at least this
+# many distinct neighbors; only these get a traffic light (Этап 14.2).
+MIN_INTERSECTION_DEGREE = 3
+DEFAULT_LIGHT_RED_SECONDS = 20.0
+DEFAULT_LIGHT_YELLOW_SECONDS = 3.0
+DEFAULT_LIGHT_GREEN_SECONDS = 25.0
+
+# Синтетическая сеть троллейбусных линий (Этап 14.4): нет реальных данных о
+# линиях, поэтому помечаем trolleybus_wire=true на дорогах этих типов —
+# трамвайно-троллейбусные линии в реальности идут вдоль главных улиц.
+TROLLEYBUS_WIRE_ROAD_TYPES = frozenset({"trunk", "primary"})
 
 
 @dataclass(frozen=True)
@@ -127,12 +141,19 @@ def _coordinate_key(longitude: float, latitude: float) -> tuple[float, float]:
     return (round(longitude, 6), round(latitude, 6))
 
 
-async def build_road_graph(db: AsyncSession, features: list[RoadSegmentFeature]) -> tuple[int, int]:
+async def build_road_graph(
+    db: AsyncSession, features: list[RoadSegmentFeature], *, rng: random.Random | None = None
+) -> tuple[int, int]:
     """Build (or rebuild) the road graph from parsed LineString segments.
 
     Nodes are deduplicated by coordinate and reused across runs. Edges are
     fully rebuilt on every run since nothing references them by foreign key.
+    Traffic lights (Этап 14.2) are also fully rebuilt: seeded at every node
+    that touches >= MIN_INTERSECTION_DEGREE distinct neighbors (a real
+    intersection, not a pass-through point on a curving road).
     """
+    rng = rng or random.Random()
+
     existing_nodes = (await db.execute(select(RoadNode))).scalars().all()
     node_by_coordinate: dict[tuple[float, float], RoadNode] = {
         _coordinate_key(node.longitude, node.latitude): node for node in existing_nodes
@@ -150,12 +171,19 @@ async def build_road_graph(db: AsyncSession, features: list[RoadSegmentFeature])
 
     await db.execute(delete(RoadEdge))
 
+    neighbor_keys: dict[tuple[float, float], set[tuple[float, float]]] = {}
     edge_count = 0
     for feature in features:
         for (lon_a, lat_a), (lon_b, lat_b) in pairwise(feature.coordinates):
-            node_a = node_by_coordinate[_coordinate_key(lon_a, lat_a)]
-            node_b = node_by_coordinate[_coordinate_key(lon_b, lat_b)]
+            key_a = _coordinate_key(lon_a, lat_a)
+            key_b = _coordinate_key(lon_b, lat_b)
+            neighbor_keys.setdefault(key_a, set()).add(key_b)
+            neighbor_keys.setdefault(key_b, set()).add(key_a)
+
+            node_a = node_by_coordinate[key_a]
+            node_b = node_by_coordinate[key_b]
             distance_km = haversine_km(lat_a, lon_a, lat_b, lon_b)
+            trolleybus_wire = feature.road_type in TROLLEYBUS_WIRE_ROAD_TYPES
 
             db.add(
                 RoadEdge(
@@ -165,6 +193,7 @@ async def build_road_graph(db: AsyncSession, features: list[RoadSegmentFeature])
                     max_speed_kmh=feature.max_speed_kmh,
                     road_type=feature.road_type,
                     is_one_way=feature.is_one_way,
+                    trolleybus_wire=trolleybus_wire,
                 )
             )
             edge_count += 1
@@ -177,9 +206,27 @@ async def build_road_graph(db: AsyncSession, features: list[RoadSegmentFeature])
                         max_speed_kmh=feature.max_speed_kmh,
                         road_type=feature.road_type,
                         is_one_way=feature.is_one_way,
+                        trolleybus_wire=trolleybus_wire,
                     )
                 )
                 edge_count += 1
+
+    await db.execute(delete(TrafficLight))
+    cycle_length = (
+        DEFAULT_LIGHT_RED_SECONDS + DEFAULT_LIGHT_YELLOW_SECONDS + DEFAULT_LIGHT_GREEN_SECONDS
+    )
+    for key, neighbors in neighbor_keys.items():
+        if len(neighbors) < MIN_INTERSECTION_DEGREE:
+            continue
+        db.add(
+            TrafficLight(
+                road_node_id=node_by_coordinate[key].id,
+                red_seconds=DEFAULT_LIGHT_RED_SECONDS,
+                yellow_seconds=DEFAULT_LIGHT_YELLOW_SECONDS,
+                green_seconds=DEFAULT_LIGHT_GREEN_SECONDS,
+                offset_seconds=rng.uniform(0.0, cycle_length),
+            )
+        )
 
     await db.commit()
     return len(node_by_coordinate), edge_count

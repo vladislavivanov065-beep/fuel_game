@@ -29,3 +29,4 @@ class RoadEdge(Base):
     is_one_way: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
     traffic_coefficient: Mapped[float] = mapped_column(Float, default=1.0, nullable=False)
     is_closed: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    trolleybus_wire: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)

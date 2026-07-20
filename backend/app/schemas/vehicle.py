@@ -6,7 +6,7 @@ from typing import TYPE_CHECKING
 from pydantic import BaseModel
 
 from app.db.models.station_fuel import FuelType
-from app.db.models.vehicle import DriverType, VehicleStatus
+from app.db.models.vehicle import DriverType, VehicleStatus, VehicleType
 
 if TYPE_CHECKING:
     from app.db.models.vehicle import Vehicle
@@ -22,11 +22,13 @@ class VehicleResponse(BaseModel):
     id: uuid.UUID
     game_id: uuid.UUID
     driver_type: DriverType
+    vehicle_type: VehicleType
     fuel_type: FuelType
     status: VehicleStatus
     route_progress: float
     current_latitude: float
     current_longitude: float
+    heading: float
     route_points: list[VehicleRoutePointResponse]
     total_distance_km: float
     total_travel_time_minutes: float
@@ -42,11 +44,13 @@ class VehicleResponse(BaseModel):
             id=vehicle.id,
             game_id=vehicle.game_id,
             driver_type=vehicle.driver_type,
+            vehicle_type=vehicle.vehicle_type,
             fuel_type=vehicle.fuel_type,
             status=vehicle.status,
             route_progress=vehicle.route_progress,
             current_latitude=vehicle.current_latitude,
             current_longitude=vehicle.current_longitude,
+            heading=vehicle.heading,
             route_points=[
                 VehicleRoutePointResponse(
                     latitude=point["latitude"],

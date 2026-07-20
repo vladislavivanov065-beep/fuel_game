@@ -3,7 +3,7 @@ import uuid
 from datetime import datetime
 from typing import Any
 
-from sqlalchemy import DateTime, Enum, Float, ForeignKey, func
+from sqlalchemy import DateTime, Enum, Float, ForeignKey, Integer, func
 from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -39,6 +39,17 @@ class Truck(Base):
     route_progress: Mapped[float] = mapped_column(Float, default=0.0, nullable=False)
     current_latitude: Mapped[float] = mapped_column(Float, nullable=False)
     current_longitude: Mapped[float] = mapped_column(Float, nullable=False)
+    heading: Mapped[float] = mapped_column(Float, default=0.0, nullable=False)
+
+    # Physical simulation state (Этап 14.3) — see Vehicle.route_edge_index for
+    # why this index is needed alongside current_edge_id.
+    route_edge_index: Mapped[int] = mapped_column(Integer, default=1, nullable=False)
+    current_edge_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("road_edges.id"), nullable=True
+    )
+    position_on_edge_m: Mapped[float] = mapped_column(Float, default=0.0, nullable=False)
+    velocity_kmh: Mapped[float] = mapped_column(Float, default=0.0, nullable=False)
+
     started_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False
     )

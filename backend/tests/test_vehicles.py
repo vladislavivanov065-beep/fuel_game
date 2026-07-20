@@ -152,12 +152,15 @@ async def _seed_road_graph(*point_pairs: tuple[float, float]) -> None:
         for a, b in zip(nodes, nodes[1:], strict=False):
             db.add_all(
                 [
+                    # trolleybus_wire=True so the trolleybus spawn tests below
+                    # have a route to use (Этап 14.4).
                     RoadEdge(
                         from_node_id=a.id,
                         to_node_id=b.id,
                         distance_km=8.0,
                         max_speed_kmh=60.0,
                         road_type="local",
+                        trolleybus_wire=True,
                     ),
                     RoadEdge(
                         from_node_id=b.id,
@@ -165,6 +168,7 @@ async def _seed_road_graph(*point_pairs: tuple[float, float]) -> None:
                         distance_km=8.0,
                         max_speed_kmh=60.0,
                         road_type="local",
+                        trolleybus_wire=True,
                     ),
                 ]
             )
@@ -265,6 +269,154 @@ async def test_spawn_vehicles_for_game_caps_at_max_active_vehicles(
     assert len(rows) <= 3
 
 
+async def _bias_vehicle_type_weights(game_id: uuid.UUID, only_type: str) -> None:
+    """Zero out every vehicle_types spawn_weight except ``only_type`` so spawn is deterministic."""
+    async with async_session_factory() as db:
+        game = await db.get(GameRoom, game_id)
+        settings_json = dict(game.settings_json)
+        vehicle_types = {
+            name: dict(value) for name, value in settings_json["vehicle_types"].items()
+        }
+        for name, value in vehicle_types.items():
+            value["spawn_weight"] = 1.0 if name == only_type else 0.0
+        settings_json["vehicle_types"] = vehicle_types
+        game.settings_json = settings_json
+        await db.commit()
+
+
+async def test_spawn_vehicles_for_game_distributes_by_vehicle_type_weight(
+    db_session: AsyncSession,
+) -> None:
+    game_id, _station_id = await _setup_running_game_with_owned_station("VehicleTypeWeight")
+    await _bias_vehicle_type_weights(game_id, "motorcycle")
+
+    async with async_session_factory() as db:
+        game = await db.get(GameRoom, game_id)
+        settings_json = dict(game.settings_json)
+        settings_json["max_active_vehicles"] = 50
+        game.settings_json = settings_json
+        await db.commit()
+
+    vehicles_module._last_spawn_check[game_id] = datetime.now(UTC) - timedelta(minutes=5)
+    async with async_session_factory() as db:
+        spawned = await spawn_vehicles_for_game(db, game_id, rng=random.Random(3))
+    assert len(spawned) > 0
+
+    async with async_session_factory() as db:
+        rows = (await db.execute(select(Vehicle))).scalars().all()
+    assert rows
+    assert all(vehicle.vehicle_type.value == "motorcycle" for vehicle in rows)
+
+
+async def test_spawn_vehicles_for_game_cargo_truck_only_buys_diesel(
+    db_session: AsyncSession,
+) -> None:
+    game_id, _station_id = await _setup_running_game_with_owned_station("VehicleCargoTruck")
+    await _bias_vehicle_type_weights(game_id, "cargo_truck")
+
+    vehicles_module._last_spawn_check[game_id] = datetime.now(UTC) - timedelta(minutes=5)
+    async with async_session_factory() as db:
+        spawned = await spawn_vehicles_for_game(db, game_id, rng=random.Random(4))
+    assert len(spawned) > 0
+
+    async with async_session_factory() as db:
+        rows = (await db.execute(select(Vehicle))).scalars().all()
+    assert rows
+    assert all(vehicle.vehicle_type.value == "cargo_truck" for vehicle in rows)
+    assert all(vehicle.fuel_type == FuelType.DIESEL for vehicle in rows)
+
+
+async def test_spawn_vehicles_for_game_trolleybus_never_selects_a_station(
+    db_session: AsyncSession,
+) -> None:
+    game_id, _station_id = await _setup_running_game_with_owned_station("VehicleTrolleybus")
+    await _bias_vehicle_type_weights(game_id, "trolleybus")
+
+    async with async_session_factory() as db:
+        game = await db.get(GameRoom, game_id)
+        settings_json = dict(game.settings_json)
+        settings_json["vehicle_refuel_threshold_ratio"] = 1.0
+        game.settings_json = settings_json
+        await db.commit()
+
+    vehicles_module._last_spawn_check[game_id] = datetime.now(UTC) - timedelta(minutes=5)
+    async with async_session_factory() as db:
+        spawned = await spawn_vehicles_for_game(db, game_id, rng=random.Random(5))
+    assert len(spawned) > 0
+
+    async with async_session_factory() as db:
+        rows = (await db.execute(select(Vehicle))).scalars().all()
+    assert rows
+    assert all(vehicle.vehicle_type.value == "trolleybus" for vehicle in rows)
+    assert all(vehicle.chosen_station_id is None for vehicle in rows)
+
+
+def test_road_type_edge_filter_forces_trolleybus_onto_wire_detour() -> None:
+    """A trolleybus's edge filter must reject the shorter direct path (no
+    wire) and force ``build_multi_stop_route`` onto the longer wire-tagged
+    detour (Этап 14.4)."""
+    node_a = routing_service.GraphNode(id=uuid.uuid4(), latitude=56.0, longitude=47.0)
+    node_b = routing_service.GraphNode(id=uuid.uuid4(), latitude=56.01, longitude=47.0)
+    node_c = routing_service.GraphNode(id=uuid.uuid4(), latitude=56.02, longitude=47.0)
+    node_d = routing_service.GraphNode(id=uuid.uuid4(), latitude=56.01, longitude=47.05)
+    nodes = [node_a, node_b, node_c, node_d]
+
+    def _pair(
+        a: routing_service.GraphNode,
+        b: routing_service.GraphNode,
+        distance_km: float,
+        road_type: str,
+        trolleybus_wire: bool,
+    ) -> list[routing_service.GraphEdge]:
+        return [
+            routing_service.GraphEdge(
+                id=uuid.uuid4(),
+                from_node_id=a.id,
+                to_node_id=b.id,
+                distance_km=distance_km,
+                max_speed_kmh=60.0,
+                traffic_coefficient=1.0,
+                is_closed=False,
+                road_type=road_type,
+                trolleybus_wire=trolleybus_wire,
+            ),
+            routing_service.GraphEdge(
+                id=uuid.uuid4(),
+                from_node_id=b.id,
+                to_node_id=a.id,
+                distance_km=distance_km,
+                max_speed_kmh=60.0,
+                traffic_coefficient=1.0,
+                is_closed=False,
+                road_type=road_type,
+                trolleybus_wire=trolleybus_wire,
+            ),
+        ]
+
+    # Direct path A-B-C (10 km, no wire) is shorter than the detour
+    # A-D-C (16 km, wire) — without the filter the router would prefer it.
+    edges = (
+        _pair(node_a, node_b, 5.0, "local", False)
+        + _pair(node_b, node_c, 5.0, "local", False)
+        + _pair(node_a, node_d, 8.0, "trunk", True)
+        + _pair(node_d, node_c, 8.0, "trunk", True)
+    )
+
+    settings = GameSettings()
+    edge_filter = vehicles_module._road_type_edge_filter(settings.vehicle_types["trolleybus"])
+    assert edge_filter is not None
+
+    route_json = vehicles_module._build_vehicle_route(
+        nodes, edges, node_a, node_c, None, edge_filter=edge_filter
+    )
+
+    assert route_json["points"][-1]["cumulative_km"] == 16.0
+    wire_edge_ids = {str(edge.id) for edge in edges if edge.trolleybus_wire}
+    used_edge_ids = {point["edge_id"] for point in route_json["points"] if point["edge_id"]}
+    assert used_edge_ids
+    assert used_edge_ids <= wire_edge_ids
+
+
 async def _insert_vehicle(
     db: AsyncSession,
     *,
@@ -272,10 +424,15 @@ async def _insert_vehicle(
     home_node: routing_service.GraphNode,
     dest_node: routing_service.GraphNode,
     route_json: dict,
-    started_at: datetime,
+    route_edge_index: int = 1,
+    position_on_edge_m: float = 0.0,
     fuel_liters: Decimal = Decimal("40"),
     chosen_station_id: uuid.UUID | None = None,
 ) -> Vehicle:
+    points = route_json["points"]
+    current_edge_id = (
+        uuid.UUID(points[route_edge_index]["edge_id"]) if route_edge_index < len(points) else None
+    )
     vehicle = Vehicle(
         game_id=game_id,
         driver_type=DriverType.RANDOM,
@@ -288,6 +445,10 @@ async def _insert_vehicle(
         route_progress=0.0,
         current_latitude=home_node.latitude,
         current_longitude=home_node.longitude,
+        route_edge_index=route_edge_index,
+        current_edge_id=current_edge_id,
+        position_on_edge_m=position_on_edge_m,
+        velocity_kmh=0.0,
         tank_capacity_liters=Decimal("50"),
         fuel_liters=fuel_liters,
         budget=Decimal("100000.00"),
@@ -296,7 +457,7 @@ async def _insert_vehicle(
         queue_sensitivity=1.0,
         rating_sensitivity=1.0,
         chosen_station_id=chosen_station_id,
-        started_at=started_at,
+        started_at=datetime.now(UTC),
     )
     db.add(vehicle)
     await db.commit()
@@ -313,13 +474,16 @@ async def test_update_vehicles_interpolates_position_mid_route(db_session: Async
         dest_node = routing_service.find_nearest_node(nodes, 56.04, 47.04)
         route = routing_service.build_multi_stop_route(nodes, edges, [home_node.id, dest_node.id])
         route_json = routing_service.serialize_multi_stop_route(route, [0])
+        # Route is home(0km)-node1(8km)-node2(16km)-node3(24km)-dest(32km); place the
+        # vehicle halfway through the 2nd edge (node1->node2), i.e. ~12/32 = 0.375 overall.
         vehicle = await _insert_vehicle(
             db,
             game_id=game_id,
             home_node=home_node,
             dest_node=dest_node,
             route_json=route_json,
-            started_at=datetime.now(UTC) - timedelta(minutes=16),
+            route_edge_index=2,
+            position_on_edge_m=4000.0,
         )
         vehicle_id = vehicle.id
 
@@ -345,13 +509,17 @@ async def test_update_vehicles_removes_vehicle_on_arrival(db_session: AsyncSessi
         dest_node = routing_service.find_nearest_node(nodes, 56.04, 47.04)
         route = routing_service.build_multi_stop_route(nodes, edges, [home_node.id, dest_node.id])
         route_json = routing_service.serialize_multi_stop_route(route, [0])
+        # Place the vehicle right at the end of the final edge so one physics
+        # tick's advance crosses the finish line.
+        last_index = len(route_json["points"]) - 1
         vehicle = await _insert_vehicle(
             db,
             game_id=game_id,
             home_node=home_node,
             dest_node=dest_node,
             route_json=route_json,
-            started_at=datetime.now(UTC) - timedelta(minutes=100),
+            route_edge_index=last_index,
+            position_on_edge_m=7999.99,
         )
         vehicle_id = vehicle.id
 
@@ -392,7 +560,8 @@ async def test_update_vehicles_queues_then_purchases_fuel_at_station(
             home_node=home_node,
             dest_node=dest_node,
             route_json=route_json,
-            started_at=datetime.now(UTC) - timedelta(minutes=16),
+            route_edge_index=2,
+            position_on_edge_m=7999.99,
             fuel_liters=Decimal("5"),
             chosen_station_id=station_id,
         )
@@ -488,7 +657,8 @@ async def test_update_vehicles_skips_purchase_on_stockout_and_lowers_rating(
             home_node=home_node,
             dest_node=dest_node,
             route_json=route_json,
-            started_at=datetime.now(UTC) - timedelta(minutes=16),
+            route_edge_index=2,
+            position_on_edge_m=7999.99,
             fuel_liters=Decimal("5"),
             chosen_station_id=station_id,
         )
@@ -591,7 +761,8 @@ async def test_update_vehicles_applies_shop_ancillary_revenue_on_purchase(
             home_node=home_node,
             dest_node=dest_node,
             route_json=route_json,
-            started_at=datetime.now(UTC) - timedelta(minutes=16),
+            route_edge_index=2,
+            position_on_edge_m=7999.99,
             fuel_liters=Decimal("5"),
             chosen_station_id=station_id,
         )
@@ -642,7 +813,8 @@ async def test_update_vehicles_food_court_upgrade_increases_dwell_time(
             home_node=home_node,
             dest_node=dest_node,
             route_json=route_json,
-            started_at=datetime.now(UTC) - timedelta(minutes=16),
+            route_edge_index=2,
+            position_on_edge_m=7999.99,
             fuel_liters=Decimal("5"),
             chosen_station_id=station_id,
         )

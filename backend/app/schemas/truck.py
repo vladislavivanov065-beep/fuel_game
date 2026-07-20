@@ -24,6 +24,7 @@ class TruckResponse(BaseModel):
     route_progress: float
     current_latitude: float
     current_longitude: float
+    heading: float
     route_points: list[TruckRoutePointResponse]
     total_distance_km: float
     total_travel_time_minutes: float
@@ -40,6 +41,7 @@ class TruckResponse(BaseModel):
             route_progress=truck.route_progress,
             current_latitude=truck.current_latitude,
             current_longitude=truck.current_longitude,
+            heading=truck.heading,
             route_points=[
                 TruckRoutePointResponse(
                     latitude=point["latitude"],

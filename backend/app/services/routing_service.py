@@ -2,6 +2,7 @@ import heapq
 import math
 import uuid
 from collections import defaultdict
+from collections.abc import Callable
 from dataclasses import dataclass
 from typing import Any
 
@@ -38,6 +39,8 @@ class GraphEdge:
     max_speed_kmh: float
     traffic_coefficient: float
     is_closed: bool
+    road_type: str
+    trolleybus_wire: bool
 
 
 @dataclass(frozen=True)
@@ -98,11 +101,17 @@ def find_route(
     edges: list[GraphEdge],
     start_node_id: uuid.UUID,
     end_node_id: uuid.UUID,
+    *,
+    edge_filter: Callable[[GraphEdge], bool] | None = None,
 ) -> RouteResult:
     """A* search over a directed graph, weighted by travel time.
 
     Edges with ``is_closed`` set are excluded from the search entirely, so a
-    closed road is simply unreachable until it reopens.
+    closed road is simply unreachable until it reopens. ``edge_filter``, if
+    given, further restricts which edges may be used at all (Этап 14.4 — e.g.
+    a trolleybus may only use ``trolleybus_wire`` edges, a cargo truck may not
+    use certain ``road_type`` values) — an edge failing the filter is treated
+    exactly like a closed one for this search.
     """
     nodes_by_id = {node.id: node for node in nodes}
     if start_node_id not in nodes_by_id or end_node_id not in nodes_by_id:
@@ -122,7 +131,7 @@ def find_route(
 
     adjacency: dict[uuid.UUID, list[GraphEdge]] = defaultdict(list)
     for edge in edges:
-        if not edge.is_closed:
+        if not edge.is_closed and (edge_filter is None or edge_filter(edge)):
             adjacency[edge.from_node_id].append(edge)
 
     fastest_speed_kmh = max((edge.max_speed_kmh for edge in edges), default=60.0)
@@ -192,6 +201,8 @@ def build_multi_stop_route(
     nodes: list[GraphNode],
     edges: list[GraphEdge],
     waypoint_node_ids: list[uuid.UUID],
+    *,
+    edge_filter: Callable[[GraphEdge], bool] | None = None,
 ) -> MultiStopRoute:
     """Chain consecutive A* legs into one route, annotated with running totals.
 
@@ -222,7 +233,9 @@ def build_multi_stop_route(
     cumulative_minutes = 0.0
 
     for i in range(len(waypoint_node_ids) - 1):
-        leg = find_route(nodes, edges, waypoint_node_ids[i], waypoint_node_ids[i + 1])
+        leg = find_route(
+            nodes, edges, waypoint_node_ids[i], waypoint_node_ids[i + 1], edge_filter=edge_filter
+        )
         # A trivial leg (waypoint == next waypoint) returns two identical
         # points but empty segment lists; zip stops at the shorter (empty)
         # side, so no new point is added and the stop simply reuses the
@@ -341,6 +354,8 @@ async def load_graph(
             max_speed_kmh=row.max_speed_kmh,
             traffic_coefficient=row.traffic_coefficient * traffic_multiplier,
             is_closed=row.is_closed,
+            road_type=row.road_type,
+            trolleybus_wire=row.trolleybus_wire,
         )
         for row in edge_rows
     ]

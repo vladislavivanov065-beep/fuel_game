@@ -14,6 +14,7 @@ export interface Truck {
   route_progress: number
   current_latitude: number
   current_longitude: number
+  heading: number
   route_points: TruckRoutePoint[]
   total_distance_km: number
   total_travel_time_minutes: number
@@ -25,33 +26,9 @@ export function listTrucks(gameId: string): Promise<Truck[]> {
   return apiRequest<Truck[]>(`/api/games/${gameId}/trucks`)
 }
 
-export function interpolateTruckPosition(
-  truck: Truck,
-  nowMs: number,
-): { latitude: number; longitude: number } {
-  const elapsedMinutes = (nowMs - new Date(truck.started_at).getTime()) / 60000
-  const points = truck.route_points
-
-  if (points.length === 0) {
-    return { latitude: truck.current_latitude, longitude: truck.current_longitude }
-  }
-  if (elapsedMinutes <= points[0].cumulative_minutes) {
-    return { latitude: points[0].latitude, longitude: points[0].longitude }
-  }
-
-  for (let i = 0; i < points.length - 1; i++) {
-    const previous = points[i]
-    const current = points[i + 1]
-    if (elapsedMinutes <= current.cumulative_minutes) {
-      const span = current.cumulative_minutes - previous.cumulative_minutes
-      const fraction = span === 0 ? 0 : (elapsedMinutes - previous.cumulative_minutes) / span
-      return {
-        latitude: previous.latitude + (current.latitude - previous.latitude) * fraction,
-        longitude: previous.longitude + (current.longitude - previous.longitude) * fraction,
-      }
-    }
-  }
-
-  const last = points[points.length - 1]
-  return { latitude: last.latitude, longitude: last.longitude }
+export function interpolateTruckPosition(truck: Truck): { latitude: number; longitude: number } {
+  // Этап 14.3: see interpolateVehiclePosition in api/vehicles.ts — trucks are
+  // now physics-simulated (car-following + traffic lights + closures) too,
+  // so the client shows the server's last position instead of extrapolating.
+  return { latitude: truck.current_latitude, longitude: truck.current_longitude }
 }

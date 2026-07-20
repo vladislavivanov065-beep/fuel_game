@@ -1,6 +1,7 @@
 import math
 import random
 import uuid
+from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from decimal import ROUND_HALF_UP, Decimal
@@ -21,12 +22,26 @@ from app.db.models.game_room import GameRoom, GameStatus
 from app.db.models.game_station import STATION_STATUS_ACTIVE, GameStation
 from app.db.models.station_fuel import FuelType, StationFuel
 from app.db.models.station_upgrade import UpgradeType
-from app.db.models.vehicle import DriverType, Vehicle, VehicleStatus
-from app.schemas.game_settings import EventModifiers, GameSettings
+from app.db.models.traffic_light import TrafficLight
+from app.db.models.vehicle import DriverType, Vehicle, VehicleStatus, VehicleType
+from app.schemas.game_settings import EventModifiers, GameSettings, VehicleTypeSettings
 from app.services import event_service, routing_service
+from app.simulation import traffic
 from app.simulation.station_upgrades import get_active_upgrade_levels
+from app.simulation.traffic_lights import light_state_at
 
 _CENTS = Decimal("0.01")
+_DEFAULT_VEHICLE_TYPE_SETTINGS = VehicleTypeSettings(length_meters=4.5, speed_factor=1.0)
+
+
+def _choose_vehicle_type(
+    settings: GameSettings, rng: random.Random
+) -> tuple[VehicleType, VehicleTypeSettings]:
+    type_names = list(settings.vehicle_types.keys())
+    weights = [settings.vehicle_types[name].spawn_weight for name in type_names]
+    chosen_name = rng.choices(type_names, weights=weights, k=1)[0]
+    return VehicleType(chosen_name), settings.vehicle_types[chosen_name]
+
 
 _ATTRACTIVENESS_UPGRADE_TYPES = (
     UpgradeType.PUMPS,
@@ -153,19 +168,40 @@ def choose_station_index(scores: list[float], rng: random.Random) -> int:
     return len(scores) - 1
 
 
+def _road_type_edge_filter(
+    type_settings: VehicleTypeSettings,
+) -> Callable[[routing_service.GraphEdge], bool] | None:
+    """Этап 14.4: restrict routing to edges this vehicle type may legally use.
+
+    A trolleybus may only travel on ``trolleybus_wire`` edges; a cargo truck
+    may not enter certain ``road_type`` values (e.g. residential streets).
+    Returns None (no restriction) for ordinary vehicle types.
+    """
+    if type_settings.requires_trolleybus_wire:
+        return lambda edge: edge.trolleybus_wire
+    if type_settings.excluded_road_types:
+        excluded = frozenset(type_settings.excluded_road_types)
+        return lambda edge: edge.road_type not in excluded
+    return None
+
+
 def _build_vehicle_route(
     nodes: list[routing_service.GraphNode],
     edges: list[routing_service.GraphEdge],
     home_node: routing_service.GraphNode,
     destination_node: routing_service.GraphNode,
     station_node: routing_service.GraphNode | None,
+    *,
+    edge_filter: Callable[[routing_service.GraphEdge], bool] | None = None,
 ) -> dict[str, Any]:
     waypoint_node_ids = [home_node.id]
     if station_node is not None:
         waypoint_node_ids.append(station_node.id)
     waypoint_node_ids.append(destination_node.id)
 
-    route = routing_service.build_multi_stop_route(nodes, edges, waypoint_node_ids)
+    route = routing_service.build_multi_stop_route(
+        nodes, edges, waypoint_node_ids, edge_filter=edge_filter
+    )
     positions = list(range(len(route.stop_point_indices)))
     return routing_service.serialize_multi_stop_route(route, positions)
 
@@ -378,7 +414,10 @@ async def spawn_vehicles_for_game(
 
         driver_type = rng.choice(list(DriverType))
         profile = sample_driver_profile(driver_type, rng)
-        fuel_type = rng.choice(list(FuelType))
+        vehicle_type, type_settings = _choose_vehicle_type(settings, rng)
+        fuel_type = (
+            rng.choice(type_settings.fuel_types) if type_settings.fuel_types else FuelType.AI92
+        )
 
         tank_capacity = settings.vehicle_tank_capacity_liters * Decimal(str(rng.uniform(0.8, 1.2)))
         fuel_ratio = rng.uniform(0.05, 0.95)
@@ -392,7 +431,7 @@ async def spawn_vehicles_for_game(
         ).quantize(_CENTS, rounding=ROUND_HALF_UP)
 
         station: GameStation | None = None
-        if fuel_ratio < effective_refuel_threshold:
+        if type_settings.refuels and fuel_ratio < effective_refuel_threshold:
             station = _select_station_for_vehicle(
                 stations=stations,
                 fuel_type=fuel_type,
@@ -413,22 +452,29 @@ async def spawn_vehicles_for_game(
                 nodes, station.station_template.latitude, station.station_template.longitude
             )
 
+        edge_filter = _road_type_edge_filter(type_settings)
         try:
             route_json = _build_vehicle_route(
-                nodes, edges, home_node, destination_node, station_node
+                nodes, edges, home_node, destination_node, station_node, edge_filter=edge_filter
             )
         except routing_service.NoRouteFoundError:
             if station_node is None:
                 continue
             try:
-                route_json = _build_vehicle_route(nodes, edges, home_node, destination_node, None)
+                route_json = _build_vehicle_route(
+                    nodes, edges, home_node, destination_node, None, edge_filter=edge_filter
+                )
                 station = None
             except routing_service.NoRouteFoundError:
                 continue
 
+        route_points = route_json["points"]
+        initial_edge_id = uuid.UUID(route_points[1]["edge_id"]) if len(route_points) > 1 else None
+
         vehicle = Vehicle(
             game_id=game_id,
             driver_type=driver_type,
+            vehicle_type=vehicle_type,
             fuel_type=fuel_type,
             home_latitude=home_node.latitude,
             home_longitude=home_node.longitude,
@@ -438,6 +484,10 @@ async def spawn_vehicles_for_game(
             route_progress=0.0,
             current_latitude=home_node.latitude,
             current_longitude=home_node.longitude,
+            route_edge_index=1,
+            current_edge_id=initial_edge_id,
+            position_on_edge_m=0.0,
+            velocity_kmh=0.0,
             tank_capacity_liters=tank_capacity,
             fuel_liters=fuel_liters,
             budget=budget,
@@ -454,25 +504,6 @@ async def spawn_vehicles_for_game(
     if spawned_ids:
         await db.commit()
     return spawned_ids
-
-
-def _interpolate_position(
-    points: list[dict[str, Any]], elapsed_minutes: float
-) -> tuple[float, float]:
-    if elapsed_minutes <= points[0]["cumulative_minutes"]:
-        return points[0]["latitude"], points[0]["longitude"]
-
-    for previous, current in zip(points, points[1:], strict=False):
-        if elapsed_minutes <= current["cumulative_minutes"]:
-            t0 = previous["cumulative_minutes"]
-            t1 = current["cumulative_minutes"]
-            fraction = 0.0 if t1 == t0 else (elapsed_minutes - t0) / (t1 - t0)
-            lat = previous["latitude"] + (current["latitude"] - previous["latitude"]) * fraction
-            lon = previous["longitude"] + (current["longitude"] - previous["longitude"]) * fraction
-            return lat, lon
-
-    last = points[-1]
-    return last["latitude"], last["longitude"]
 
 
 @dataclass(frozen=True)
@@ -668,15 +699,20 @@ async def _apply_ancillary_revenue(
     return amount
 
 
+_PHYSICS_DT_SECONDS = 1.0  # matches scheduler._POLL_INTERVAL_SECONDS
+
+
 async def update_vehicles_for_game(
     db: AsyncSession, game_id: uuid.UUID, *, rng: random.Random | None = None
 ) -> VehicleTickResult:
-    """Advance every active vehicle: drive, queue at a chosen station, buy fuel, arrive.
+    """Advance every active vehicle: drive (car-following physics + traffic
+    lights), queue at a chosen station, buy fuel, arrive.
 
     Called from the scheduler's batch loop (no background task per vehicle).
-    Positions are derived from elapsed wall-clock time against a precomputed
-    route, exactly like trucks — the client interpolates between periodic
-    corrections instead of receiving a position every frame.
+    Positions are now driven by a real per-tick physics step (Этап 14.3)
+    instead of a pure function of elapsed wall-clock time — vehicles queue
+    behind each other on each edge and stop at red/yellow lights (except
+    emergency vehicle types, which ignore both).
     """
     rng = rng or random.Random()
     now = datetime.now(UTC)
@@ -687,91 +723,170 @@ async def update_vehicles_for_game(
     settings = GameSettings.model_validate(game.settings_json)
     event_modifiers, _ = await event_service.get_active_event_effects(db, game_id)
 
-    vehicle_rows = (await db.execute(select(Vehicle).where(Vehicle.game_id == game_id))).scalars()
+    vehicle_rows = list(
+        (await db.execute(select(Vehicle).where(Vehicle.game_id == game_id))).scalars()
+    )
 
     updated_vehicle_ids: list[uuid.UUID] = []
     arrived_vehicle_ids: list[uuid.UUID] = []
     purchases: list[VehiclePurchaseResult] = []
 
+    driving_vehicles: list[Vehicle] = []
     for vehicle in vehicle_rows:
-        if vehicle.status == VehicleStatus.REFUELING:
-            if vehicle.station_departure_at is None or now < vehicle.station_departure_at:
-                continue
-
-            purchase = await _complete_purchase(
-                db, vehicle, settings, rng, event_modifiers.ancillary_revenue_multiplier
-            )
-            if purchase is not None:
-                purchases.append(purchase)
-
-            points = vehicle.route_json["points"]
-            stop_entry = vehicle.route_json["stops"][0]
-            resume_minutes = points[stop_entry["point_index"]]["cumulative_minutes"]
-            vehicle.status = VehicleStatus.DRIVING
-            vehicle.chosen_station_id = None
-            vehicle.station_departure_at = None
-            vehicle.started_at = now - timedelta(minutes=resume_minutes)
-            updated_vehicle_ids.append(vehicle.id)
+        if vehicle.status != VehicleStatus.REFUELING:
+            driving_vehicles.append(vehicle)
             continue
+
+        if vehicle.station_departure_at is None or now < vehicle.station_departure_at:
+            continue
+
+        purchase = await _complete_purchase(
+            db, vehicle, settings, rng, event_modifiers.ancillary_revenue_multiplier
+        )
+        if purchase is not None:
+            purchases.append(purchase)
 
         points = vehicle.route_json["points"]
-        total_minutes = vehicle.route_json["total_travel_time_minutes"]
-        elapsed_minutes = (now - vehicle.started_at).total_seconds() / 60.0
-
-        lat, lon = _interpolate_position(points, elapsed_minutes)
-        progress = (
-            1.0 if total_minutes <= 0 else min(1.0, max(0.0, elapsed_minutes / total_minutes))
+        stop_entry = vehicle.route_json["stops"][0]
+        resume_point_index = stop_entry["point_index"]
+        vehicle.status = VehicleStatus.DRIVING
+        vehicle.chosen_station_id = None
+        vehicle.station_departure_at = None
+        vehicle.route_edge_index = resume_point_index + 1
+        vehicle.current_edge_id = (
+            uuid.UUID(points[resume_point_index + 1]["edge_id"])
+            if resume_point_index + 1 < len(points)
+            else None
         )
-        vehicle.current_latitude = lat
-        vehicle.current_longitude = lon
-        vehicle.route_progress = progress
-
-        if progress >= 1.0:
-            arrived_vehicle_ids.append(vehicle.id)
-            await db.delete(vehicle)
-            continue
-
-        if vehicle.chosen_station_id is not None:
-            stop_entry = vehicle.route_json["stops"][0]
-            station_point = points[stop_entry["point_index"]]
-            if elapsed_minutes >= station_point["cumulative_minutes"]:
-                station = (
-                    await db.execute(
-                        select(GameStation)
-                        .where(GameStation.id == vehicle.chosen_station_id)
-                        .with_for_update()
-                    )
-                ).scalar_one_or_none()
-                if station is None or station.queue_length >= settings.vehicle_max_queue_length:
-                    vehicle.chosen_station_id = None
-                else:
-                    upgrade_levels = await get_active_upgrade_levels(db, station.id)
-                    active_pumps = (
-                        settings.station_pump_count
-                        + upgrade_levels.get(UpgradeType.PUMPS, 0)
-                        * settings.station_upgrades[UpgradeType.PUMPS.value].bonus_per_level
-                    )
-                    food_court_bonus_minutes = (
-                        upgrade_levels.get(UpgradeType.FOOD_COURT, 0)
-                        * settings.station_upgrades[UpgradeType.FOOD_COURT.value].bonus_per_level
-                    )
-
-                    waiting_time = (
-                        station.queue_length * settings.vehicle_average_service_minutes
-                    ) / active_pumps
-                    service_minutes = (
-                        settings.vehicle_average_service_minutes + food_court_bonus_minutes
-                    )
-                    station.queue_length += 1
-                    vehicle.status = VehicleStatus.REFUELING
-                    vehicle.station_departure_at = now + timedelta(
-                        minutes=waiting_time + service_minutes
-                    )
-                    vehicle.current_latitude = station_point["latitude"]
-                    vehicle.current_longitude = station_point["longitude"]
-                    vehicle.route_progress = station_point["cumulative_minutes"] / total_minutes
-
+        vehicle.position_on_edge_m = 0.0
+        vehicle.velocity_kmh = 0.0
         updated_vehicle_ids.append(vehicle.id)
+
+    if driving_vehicles:
+        _, edges = await routing_service.load_graph(
+            db, traffic_multiplier=event_modifiers.traffic_multiplier
+        )
+        edges_by_id = {
+            edge.id: traffic.EdgeInfo(
+                length_m=edge.distance_km * 1000.0,
+                to_node_id=edge.to_node_id,
+                max_speed_kmh=edge.max_speed_kmh,
+                traffic_coefficient=edge.traffic_coefficient,
+            )
+            for edge in edges
+        }
+        light_rows = (await db.execute(select(TrafficLight))).scalars()
+        light_states = {light.road_node_id: light_state_at(light, now) for light in light_rows}
+
+        movers: list[traffic.Mover] = []
+        for vehicle in driving_vehicles:
+            if vehicle.current_edge_id is None or vehicle.current_edge_id not in edges_by_id:
+                continue
+            type_settings = settings.vehicle_types.get(
+                vehicle.vehicle_type.value, _DEFAULT_VEHICLE_TYPE_SETTINGS
+            )
+            movers.append(
+                traffic.Mover(
+                    key=str(vehicle.id),
+                    current_edge_id=vehicle.current_edge_id,
+                    position_on_edge_m=vehicle.position_on_edge_m,
+                    velocity_kmh=vehicle.velocity_kmh,
+                    length_m=type_settings.length_meters,
+                    is_emergency=type_settings.is_emergency,
+                    next_edge_id=traffic.next_edge_id(
+                        vehicle.route_json["points"], vehicle.route_edge_index
+                    ),
+                    speed_factor=type_settings.speed_factor,
+                )
+            )
+
+        results_by_key = {
+            result.key: result
+            for result in traffic.step_edge_occupants(
+                movers,
+                edges_by_id,
+                light_states,
+                dt_seconds=_PHYSICS_DT_SECONDS,
+                min_gap_m=settings.traffic_min_gap_m,
+            )
+        }
+
+        for vehicle in driving_vehicles:
+            result = results_by_key.get(str(vehicle.id))
+            if result is None:
+                continue
+
+            if result.crossed_edge:
+                vehicle.route_edge_index += 1
+                vehicle.current_edge_id = result.edge_id
+            vehicle.position_on_edge_m = result.position_on_edge_m
+            vehicle.velocity_kmh = result.velocity_kmh
+
+            points = vehicle.route_json["points"]
+            edge_length_m = edges_by_id[result.edge_id].length_m if not result.arrived else 0.0
+            if not result.arrived:
+                lat, lon, heading = traffic.position_within_edge(
+                    points, vehicle.route_edge_index, vehicle.position_on_edge_m, edge_length_m
+                )
+                vehicle.current_latitude = lat
+                vehicle.current_longitude = lon
+                vehicle.heading = heading
+                vehicle.route_progress = traffic.route_progress(
+                    points,
+                    vehicle.route_edge_index,
+                    vehicle.position_on_edge_m,
+                    vehicle.route_json["total_distance_km"],
+                )
+
+            if result.arrived:
+                vehicle.route_progress = 1.0
+                arrived_vehicle_ids.append(vehicle.id)
+                await db.delete(vehicle)
+                continue
+
+            if vehicle.chosen_station_id is not None:
+                stop_entry = vehicle.route_json["stops"][0]
+                if vehicle.route_edge_index > stop_entry["point_index"]:
+                    station_point = points[stop_entry["point_index"]]
+                    station = (
+                        await db.execute(
+                            select(GameStation)
+                            .where(GameStation.id == vehicle.chosen_station_id)
+                            .with_for_update()
+                        )
+                    ).scalar_one_or_none()
+                    if station is None or station.queue_length >= settings.vehicle_max_queue_length:
+                        vehicle.chosen_station_id = None
+                    else:
+                        upgrade_levels = await get_active_upgrade_levels(db, station.id)
+                        active_pumps = (
+                            settings.station_pump_count
+                            + upgrade_levels.get(UpgradeType.PUMPS, 0)
+                            * settings.station_upgrades[UpgradeType.PUMPS.value].bonus_per_level
+                        )
+                        food_court_bonus_minutes = (
+                            upgrade_levels.get(UpgradeType.FOOD_COURT, 0)
+                            * settings.station_upgrades[
+                                UpgradeType.FOOD_COURT.value
+                            ].bonus_per_level
+                        )
+
+                        waiting_time = (
+                            station.queue_length * settings.vehicle_average_service_minutes
+                        ) / active_pumps
+                        service_minutes = (
+                            settings.vehicle_average_service_minutes + food_court_bonus_minutes
+                        )
+                        station.queue_length += 1
+                        vehicle.status = VehicleStatus.REFUELING
+                        vehicle.velocity_kmh = 0.0
+                        vehicle.station_departure_at = now + timedelta(
+                            minutes=waiting_time + service_minutes
+                        )
+                        vehicle.current_latitude = station_point["latitude"]
+                        vehicle.current_longitude = station_point["longitude"]
+
+            updated_vehicle_ids.append(vehicle.id)
 
     await db.commit()
     return VehicleTickResult(

@@ -1,4 +1,5 @@
 import json
+import random
 from pathlib import Path
 
 from sqlalchemy import select
@@ -7,6 +8,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.db.models.road_edge import RoadEdge
 from app.db.models.road_node import RoadNode
 from app.db.models.station_template import StationTemplate
+from app.db.models.traffic_light import TrafficLight
 from app.services.map_import_service import (
     build_road_graph,
     parse_road_features,
@@ -185,3 +187,47 @@ async def test_build_road_graph_one_way_creates_single_edge(
 
     assert node_count == 2
     assert edge_count == 1
+
+
+def _write_three_way_intersection(tmp_path: Path) -> Path:
+    path = tmp_path / "roads.geojson"
+    _write_road_geojson(
+        path,
+        [
+            _road_feature([[47.0, 56.0], [47.1, 56.1]]),
+            _road_feature([[47.1, 56.1], [47.2, 56.0]]),
+            _road_feature([[47.1, 56.1], [47.2, 56.2]]),
+        ],
+    )
+    return path
+
+
+async def test_build_road_graph_seeds_traffic_lights_only_at_intersections(
+    tmp_path: Path, db_session: AsyncSession
+) -> None:
+    features = parse_road_features(_write_three_way_intersection(tmp_path))
+    await build_road_graph(db_session, features, rng=random.Random(1))
+
+    nodes = (await db_session.execute(select(RoadNode))).scalars().all()
+    lights = (await db_session.execute(select(TrafficLight))).scalars().all()
+
+    assert len(nodes) == 4
+    assert len(lights) == 1
+
+    intersection_node = next(
+        node for node in nodes if node.latitude == 56.1 and node.longitude == 47.1
+    )
+    assert lights[0].road_node_id == intersection_node.id
+    assert lights[0].red_seconds > 0
+    assert lights[0].green_seconds > 0
+
+
+async def test_build_road_graph_traffic_lights_are_rebuilt_idempotently(
+    tmp_path: Path, db_session: AsyncSession
+) -> None:
+    features = parse_road_features(_write_three_way_intersection(tmp_path))
+    await build_road_graph(db_session, features, rng=random.Random(1))
+    await build_road_graph(db_session, features, rng=random.Random(2))
+
+    lights = (await db_session.execute(select(TrafficLight))).scalars().all()
+    assert len(lights) == 1
