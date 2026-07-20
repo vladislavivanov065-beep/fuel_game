@@ -295,6 +295,8 @@ async def create_fuel_order(
         multi_route, list(range(len(ordered_station_ids)))
     )
     start_point = multi_route.points[0]
+    route_points = route_json["points"]
+    initial_edge_id = uuid.UUID(route_points[1]["edge_id"]) if len(route_points) > 1 else None
     db.add(
         Truck(
             game_id=game_id,
@@ -304,6 +306,10 @@ async def create_fuel_order(
             route_progress=0.0,
             current_latitude=start_point.latitude,
             current_longitude=start_point.longitude,
+            route_edge_index=1,
+            current_edge_id=initial_edge_id,
+            position_on_edge_m=0.0,
+            velocity_kmh=0.0,
             started_at=now,
         )
     )

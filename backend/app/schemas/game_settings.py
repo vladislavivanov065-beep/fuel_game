@@ -303,6 +303,7 @@ class GameSettings(BaseModel):
     free_station_price: Decimal = Field(default=Decimal("3500000.00"), gt=0)
     game_speed: float = Field(default=1.0, gt=0)
     traffic_intensity: float = Field(default=1.0, gt=0)
+    traffic_min_gap_m: float = Field(default=8.0, gt=0)
     event_frequency: float = Field(default=1.0, ge=0)
     purchase_price_coefficient: float = Field(default=1.0, gt=0)
     difficulty: Difficulty = Difficulty.NORMAL

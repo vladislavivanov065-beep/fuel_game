@@ -25,8 +25,11 @@ from app.websocket.connection_manager import connection_manager
 logger = logging.getLogger(__name__)
 
 _POLL_INTERVAL_SECONDS = 1.0
-_TRUCK_BROADCAST_INTERVAL_SECONDS = 3.0
-_VEHICLE_BROADCAST_INTERVAL_SECONDS = 3.0
+# Matches the tick rate (was 3.0s pre-Этап 14.3): clients no longer extrapolate
+# position from elapsed time between broadcasts (a stopped/queued vehicle isn't
+# a pure function of time anymore), so they need every tick's real position.
+_TRUCK_BROADCAST_INTERVAL_SECONDS = 1.0
+_VEHICLE_BROADCAST_INTERVAL_SECONDS = 1.0
 
 _task: asyncio.Task[None] | None = None
 _last_tick_at: dict[uuid.UUID, datetime] = {}
@@ -124,6 +127,7 @@ async def _broadcast_truck_tick(
                             "fuel_order_id": str(truck.fuel_order_id),
                             "latitude": truck.current_latitude,
                             "longitude": truck.current_longitude,
+                            "heading": truck.heading,
                             "progress": truck.route_progress,
                             "status": truck.status.value,
                         }

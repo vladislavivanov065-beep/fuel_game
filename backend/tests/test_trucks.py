@@ -1,5 +1,4 @@
 import uuid
-from datetime import UTC, datetime, timedelta
 from decimal import Decimal
 
 from sqlalchemy import select, update
@@ -124,12 +123,12 @@ async def test_update_trucks_interpolates_position_mid_route(db_session: AsyncSe
         truck = (
             await db.execute(select(Truck).where(Truck.fuel_order_id == order_id))
         ).scalar_one()
-        total_minutes = truck.route_json["total_travel_time_minutes"]
         refinery_lat = truck.route_json["points"][0]["latitude"]
         station_lat = truck.route_json["points"][-1]["latitude"]
-        half_way_start = datetime.now(UTC) - timedelta(minutes=total_minutes / 2)
+        # Single 10km edge refinery->station; place the truck halfway along it
+        # (Этап 14.3 replaced elapsed-time movement with per-tick physics).
         await db.execute(
-            update(Truck).where(Truck.id == truck.id).values(started_at=half_way_start)
+            update(Truck).where(Truck.id == truck.id).values(position_on_edge_m=5000.0)
         )
         await db.commit()
 
@@ -174,9 +173,10 @@ async def test_update_trucks_delivers_when_route_is_complete(db_session: AsyncSe
         truck = (
             await db.execute(select(Truck).where(Truck.fuel_order_id == order_id))
         ).scalar_one()
-        far_in_the_past = datetime.now(UTC) - timedelta(hours=1)
+        # Single 10km edge; place the truck right at the end so one physics
+        # tick's advance crosses the finish line.
         await db.execute(
-            update(Truck).where(Truck.id == truck.id).values(started_at=far_in_the_past)
+            update(Truck).where(Truck.id == truck.id).values(position_on_edge_m=9999.99)
         )
         await db.commit()
 
@@ -327,11 +327,17 @@ async def test_update_trucks_reroutes_around_a_closed_road(db_session: AsyncSess
         # The new route must be the longer detour through D (10 + 8 + 8 = 26km).
         assert truck_after.route_json["total_distance_km"] == 26.0
 
-    # Fast-forward past the new (longer) route and confirm delivery still happens.
+    # Fast-forward past the new (longer) route and confirm delivery still happens:
+    # place the truck right at the end of the final edge (D->C, 8km) of the
+    # rerouted A-B-D-C path.
     async with async_session_factory() as db:
-        far_in_the_past = datetime.now(UTC) - timedelta(hours=1)
+        truck_after = await db.get(Truck, truck.id)
+        assert truck_after is not None
+        last_index = len(truck_after.route_json["points"]) - 1
         await db.execute(
-            update(Truck).where(Truck.id == truck.id).values(started_at=far_in_the_past)
+            update(Truck)
+            .where(Truck.id == truck.id)
+            .values(route_edge_index=last_index, position_on_edge_m=7999.99)
         )
         await db.commit()
 

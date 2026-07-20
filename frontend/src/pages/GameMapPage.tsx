@@ -353,19 +353,12 @@ function RoadNetworkLayer({ mapData }: { mapData: MapData | undefined }) {
 }
 
 function TruckMarkers({ trucks }: { trucks: Truck[] }) {
-  const [now, setNow] = useState(() => Date.now())
-
-  useEffect(() => {
-    const interval = setInterval(() => setNow(Date.now()), 500)
-    return () => clearInterval(interval)
-  }, [])
-
   return (
     <>
       {trucks
         .filter((truck) => truck.status === 'en_route')
         .map((truck) => {
-          const position = interpolateTruckPosition(truck, now)
+          const position = interpolateTruckPosition(truck)
           return (
             <Marker
               key={truck.id}
@@ -408,17 +401,10 @@ const VEHICLE_TYPE_LABELS: Record<string, string> = {
 }
 
 function VehicleMarkers({ vehicles }: { vehicles: Vehicle[] }) {
-  const [now, setNow] = useState(() => Date.now())
-
-  useEffect(() => {
-    const interval = setInterval(() => setNow(Date.now()), 500)
-    return () => clearInterval(interval)
-  }, [])
-
   return (
     <>
       {vehicles.map((vehicle) => {
-        const position = interpolateVehiclePosition(vehicle, now)
+        const position = interpolateVehiclePosition(vehicle)
         const typeLabel = VEHICLE_TYPE_LABELS[vehicle.vehicle_type] ?? vehicle.vehicle_type
         return (
           <Marker

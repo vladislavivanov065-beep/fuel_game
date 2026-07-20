@@ -248,6 +248,16 @@ async def test_apply_ancillary_revenue_scales_with_event_multiplier(
         )
         route_json = routing_service.serialize_multi_stop_route(route, [0, 1])
 
+        # Place the vehicle right at the end of the edge leading to the station stop
+        # so a single physics tick crosses into it (Этап 14.3 replaced elapsed-time
+        # based movement with a per-tick car-following simulation).
+        stop_point_index = route_json["stops"][0]["point_index"]
+        points = route_json["points"]
+        edge_length_m = (
+            points[stop_point_index]["cumulative_km"]
+            - points[stop_point_index - 1]["cumulative_km"]
+        ) * 1000.0
+
         vehicle = Vehicle(
             game_id=game_id,
             driver_type=DriverType.RANDOM,
@@ -260,6 +270,10 @@ async def test_apply_ancillary_revenue_scales_with_event_multiplier(
             route_progress=0.0,
             current_latitude=home_node.latitude,
             current_longitude=home_node.longitude,
+            route_edge_index=stop_point_index,
+            current_edge_id=uuid.UUID(points[stop_point_index]["edge_id"]),
+            position_on_edge_m=max(0.0, edge_length_m - 0.01),
+            velocity_kmh=0.0,
             tank_capacity_liters=Decimal("50"),
             fuel_liters=Decimal("5"),
             budget=Decimal("100000.00"),
@@ -268,7 +282,7 @@ async def test_apply_ancillary_revenue_scales_with_event_multiplier(
             queue_sensitivity=1.0,
             rating_sensitivity=1.0,
             chosen_station_id=station_id,
-            started_at=datetime.now(UTC) - timedelta(minutes=21),
+            started_at=datetime.now(UTC),
         )
         db.add(vehicle)
         await db.commit()

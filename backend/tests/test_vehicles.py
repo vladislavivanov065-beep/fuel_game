@@ -354,10 +354,15 @@ async def _insert_vehicle(
     home_node: routing_service.GraphNode,
     dest_node: routing_service.GraphNode,
     route_json: dict,
-    started_at: datetime,
+    route_edge_index: int = 1,
+    position_on_edge_m: float = 0.0,
     fuel_liters: Decimal = Decimal("40"),
     chosen_station_id: uuid.UUID | None = None,
 ) -> Vehicle:
+    points = route_json["points"]
+    current_edge_id = (
+        uuid.UUID(points[route_edge_index]["edge_id"]) if route_edge_index < len(points) else None
+    )
     vehicle = Vehicle(
         game_id=game_id,
         driver_type=DriverType.RANDOM,
@@ -370,6 +375,10 @@ async def _insert_vehicle(
         route_progress=0.0,
         current_latitude=home_node.latitude,
         current_longitude=home_node.longitude,
+        route_edge_index=route_edge_index,
+        current_edge_id=current_edge_id,
+        position_on_edge_m=position_on_edge_m,
+        velocity_kmh=0.0,
         tank_capacity_liters=Decimal("50"),
         fuel_liters=fuel_liters,
         budget=Decimal("100000.00"),
@@ -378,7 +387,7 @@ async def _insert_vehicle(
         queue_sensitivity=1.0,
         rating_sensitivity=1.0,
         chosen_station_id=chosen_station_id,
-        started_at=started_at,
+        started_at=datetime.now(UTC),
     )
     db.add(vehicle)
     await db.commit()
@@ -395,13 +404,16 @@ async def test_update_vehicles_interpolates_position_mid_route(db_session: Async
         dest_node = routing_service.find_nearest_node(nodes, 56.04, 47.04)
         route = routing_service.build_multi_stop_route(nodes, edges, [home_node.id, dest_node.id])
         route_json = routing_service.serialize_multi_stop_route(route, [0])
+        # Route is home(0km)-node1(8km)-node2(16km)-node3(24km)-dest(32km); place the
+        # vehicle halfway through the 2nd edge (node1->node2), i.e. ~12/32 = 0.375 overall.
         vehicle = await _insert_vehicle(
             db,
             game_id=game_id,
             home_node=home_node,
             dest_node=dest_node,
             route_json=route_json,
-            started_at=datetime.now(UTC) - timedelta(minutes=16),
+            route_edge_index=2,
+            position_on_edge_m=4000.0,
         )
         vehicle_id = vehicle.id
 
@@ -427,13 +439,17 @@ async def test_update_vehicles_removes_vehicle_on_arrival(db_session: AsyncSessi
         dest_node = routing_service.find_nearest_node(nodes, 56.04, 47.04)
         route = routing_service.build_multi_stop_route(nodes, edges, [home_node.id, dest_node.id])
         route_json = routing_service.serialize_multi_stop_route(route, [0])
+        # Place the vehicle right at the end of the final edge so one physics
+        # tick's advance crosses the finish line.
+        last_index = len(route_json["points"]) - 1
         vehicle = await _insert_vehicle(
             db,
             game_id=game_id,
             home_node=home_node,
             dest_node=dest_node,
             route_json=route_json,
-            started_at=datetime.now(UTC) - timedelta(minutes=100),
+            route_edge_index=last_index,
+            position_on_edge_m=7999.99,
         )
         vehicle_id = vehicle.id
 
@@ -474,7 +490,8 @@ async def test_update_vehicles_queues_then_purchases_fuel_at_station(
             home_node=home_node,
             dest_node=dest_node,
             route_json=route_json,
-            started_at=datetime.now(UTC) - timedelta(minutes=16),
+            route_edge_index=2,
+            position_on_edge_m=7999.99,
             fuel_liters=Decimal("5"),
             chosen_station_id=station_id,
         )
@@ -570,7 +587,8 @@ async def test_update_vehicles_skips_purchase_on_stockout_and_lowers_rating(
             home_node=home_node,
             dest_node=dest_node,
             route_json=route_json,
-            started_at=datetime.now(UTC) - timedelta(minutes=16),
+            route_edge_index=2,
+            position_on_edge_m=7999.99,
             fuel_liters=Decimal("5"),
             chosen_station_id=station_id,
         )
@@ -673,7 +691,8 @@ async def test_update_vehicles_applies_shop_ancillary_revenue_on_purchase(
             home_node=home_node,
             dest_node=dest_node,
             route_json=route_json,
-            started_at=datetime.now(UTC) - timedelta(minutes=16),
+            route_edge_index=2,
+            position_on_edge_m=7999.99,
             fuel_liters=Decimal("5"),
             chosen_station_id=station_id,
         )
@@ -724,7 +743,8 @@ async def test_update_vehicles_food_court_upgrade_increases_dwell_time(
             home_node=home_node,
             dest_node=dest_node,
             route_json=route_json,
-            started_at=datetime.now(UTC) - timedelta(minutes=16),
+            route_edge_index=2,
+            position_on_edge_m=7999.99,
             fuel_liters=Decimal("5"),
             chosen_station_id=station_id,
         )

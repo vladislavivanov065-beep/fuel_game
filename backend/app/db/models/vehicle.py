@@ -4,7 +4,7 @@ from datetime import datetime
 from decimal import Decimal
 from typing import Any
 
-from sqlalchemy import DateTime, Enum, Float, ForeignKey, Numeric, func
+from sqlalchemy import DateTime, Enum, Float, ForeignKey, Integer, Numeric, func
 from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -95,6 +95,18 @@ class Vehicle(Base):
     current_latitude: Mapped[float] = mapped_column(Float, nullable=False)
     current_longitude: Mapped[float] = mapped_column(Float, nullable=False)
     heading: Mapped[float] = mapped_column(Float, default=0.0, nullable=False)
+
+    # Physical simulation state (Этап 14.3): ``route_edge_index`` is the index
+    # into route_json["points"] of the point this vehicle is currently
+    # travelling *towards* (so route_json["points"][route_edge_index]["edge_id"]
+    # == current_edge_id) — needed because a route can revisit the same edge,
+    # so current_edge_id alone can't locate position within route_json.
+    route_edge_index: Mapped[int] = mapped_column(Integer, default=1, nullable=False)
+    current_edge_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("road_edges.id"), nullable=True
+    )
+    position_on_edge_m: Mapped[float] = mapped_column(Float, default=0.0, nullable=False)
+    velocity_kmh: Mapped[float] = mapped_column(Float, default=0.0, nullable=False)
 
     tank_capacity_liters: Mapped[Decimal] = mapped_column(Numeric(8, 2), nullable=False)
     fuel_liters: Mapped[Decimal] = mapped_column(Numeric(8, 2), nullable=False)
