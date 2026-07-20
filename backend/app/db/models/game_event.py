@@ -21,6 +21,7 @@ class EventType(enum.StrEnum):
     TOURIST_SEASON = "tourist_season"
     REGULATORY_INSPECTION = "regulatory_inspection"
     REFINERY_BREAKDOWN = "refinery_breakdown"
+    POLICE_CHECKPOINT = "police_checkpoint"
 
 
 class EventStatus(enum.StrEnum):

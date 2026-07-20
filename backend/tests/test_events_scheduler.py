@@ -203,3 +203,62 @@ async def test_expire_due_events_reopens_road_and_reactivates_station(
         station = await db.get(GameStation, station_id)
         assert station is not None
         assert station.status == STATION_STATUS_ACTIVE
+
+
+async def test_expire_due_events_reopens_every_edge_from_a_regional_closure(
+    db_session: AsyncSession,
+) -> None:
+    """Этап 14.6: police_checkpoint's closed_edge_ids can list several edges
+    (a whole region) at once — expiry must reopen every one of them, not
+    just the first, using the same generic revert path as road_works."""
+    game_id, _station_id = await _setup_owned_station("ExpireRegional")
+
+    async with async_session_factory() as db:
+        node_a = RoadNode(latitude=56.0, longitude=47.0)
+        node_b = RoadNode(latitude=56.01, longitude=47.01)
+        node_c = RoadNode(latitude=56.02, longitude=47.02)
+        db.add_all([node_a, node_b, node_c])
+        await db.flush()
+        edge_1 = RoadEdge(
+            from_node_id=node_a.id,
+            to_node_id=node_b.id,
+            distance_km=1.0,
+            max_speed_kmh=60.0,
+            road_type="local",
+            is_closed=True,
+        )
+        edge_2 = RoadEdge(
+            from_node_id=node_b.id,
+            to_node_id=node_c.id,
+            distance_km=1.0,
+            max_speed_kmh=60.0,
+            road_type="local",
+            is_closed=True,
+        )
+        db.add_all([edge_1, edge_2])
+        await db.commit()
+        edge_1_id = edge_1.id
+        edge_2_id = edge_2.id
+
+        event = GameEvent(
+            game_id=game_id,
+            event_type=EventType.POLICE_CHECKPOINT,
+            status=EventStatus.ACTIVE,
+            region_json={"latitude": 56.0, "longitude": 47.0, "radius_km": 15.0},
+            modifiers_json={"closed_edge_ids": [str(edge_1_id), str(edge_2_id)]},
+            started_at=datetime.now(UTC) - timedelta(minutes=10),
+            ends_at=datetime.now(UTC) - timedelta(seconds=1),
+        )
+        db.add(event)
+        await db.commit()
+        event_id = event.id
+
+    async with async_session_factory() as db:
+        expired_ids = await expire_due_events_for_game(db, game_id)
+    assert event_id in expired_ids
+
+    async with async_session_factory() as db:
+        edge_1_after = await db.get(RoadEdge, edge_1_id)
+        edge_2_after = await db.get(RoadEdge, edge_2_id)
+    assert edge_1_after is not None and edge_1_after.is_closed is False
+    assert edge_2_after is not None and edge_2_after.is_closed is False

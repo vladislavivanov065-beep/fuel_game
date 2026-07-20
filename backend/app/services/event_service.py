@@ -4,7 +4,7 @@ from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from decimal import Decimal
 
-from sqlalchemy import func, select
+from sqlalchemy import func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
@@ -18,8 +18,10 @@ from app.db.models.game_room import GameRoom, GameStatus
 from app.db.models.game_station import STATION_STATUS_ACTIVE, STATION_STATUS_INACTIVE, GameStation
 from app.db.models.refinery_fuel import RefineryFuel
 from app.db.models.road_edge import RoadEdge
+from app.db.models.road_node import RoadNode
 from app.db.models.station_upgrade import StationUpgrade, UpgradeStatus
 from app.schemas.game_settings import EventModifiers, GameSettings
+from app.services.routing_service import haversine_km
 
 
 class GameNotFoundError(Exception):
@@ -180,6 +182,44 @@ async def _close_random_road_edge(db: AsyncSession, rng: random.Random) -> list[
     return closed_ids
 
 
+async def _close_edges_in_region(db: AsyncSession, region: dict[str, float]) -> list[uuid.UUID]:
+    """Close every open edge touching a node inside ``region`` (Этап 14.6 —
+    ГАИ/дорожная служба blocking an entire zone), unlike ``_close_random_road_edge``
+    (road_works, a single point repair) — both share the same underlying
+    ``RoadEdge.is_closed`` mechanism, only the scope differs."""
+    nodes = (await db.execute(select(RoadNode))).scalars().all()
+    node_ids_in_region = {
+        node.id
+        for node in nodes
+        if haversine_km(region["latitude"], region["longitude"], node.latitude, node.longitude)
+        <= region["radius_km"]
+    }
+    if not node_ids_in_region:
+        return []
+
+    edges = (
+        (
+            await db.execute(
+                select(RoadEdge).where(
+                    RoadEdge.is_closed.is_(False),
+                    or_(
+                        RoadEdge.from_node_id.in_(node_ids_in_region),
+                        RoadEdge.to_node_id.in_(node_ids_in_region),
+                    ),
+                )
+            )
+        )
+        .scalars()
+        .all()
+    )
+    closed_ids: list[uuid.UUID] = []
+    for edge in edges:
+        edge.is_closed = True
+        closed_ids.append(edge.id)
+
+    return closed_ids
+
+
 async def _inspect_stations(
     db: AsyncSession,
     game_id: uuid.UUID,
@@ -289,6 +329,11 @@ async def create_event_for_game(
         closed_ids = await _close_random_road_edge(db, rng)
         if closed_ids:
             modifiers_extra["closed_edge_ids"] = [str(edge_id) for edge_id in closed_ids]
+
+    if definition.close_region_edges and region_json is not None:
+        region_closed_ids = await _close_edges_in_region(db, region_json)
+        if region_closed_ids:
+            modifiers_extra["closed_edge_ids"] = [str(edge_id) for edge_id in region_closed_ids]
 
     if definition.inspect_station_count > 0:
         fined_ids = await _inspect_stations(

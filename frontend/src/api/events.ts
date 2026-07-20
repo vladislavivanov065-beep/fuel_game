@@ -11,6 +11,7 @@ export type EventType =
   | 'tourist_season'
   | 'regulatory_inspection'
   | 'refinery_breakdown'
+  | 'police_checkpoint'
 
 export type EventStatusValue = 'active' | 'expired'
 
