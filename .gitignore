@@ -18,3 +18,8 @@ dist/
 
 # OS
 .DS_Store
+
+# Map editor: user-drawn projects and generated exports, not source
+map_editor/projects/*.json
+map_editor/output/*.geojson
+map_editor/output/*.py
