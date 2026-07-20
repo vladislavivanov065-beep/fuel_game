@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import type { FuelOrder } from '../api/fuelOrders'
 import type { GameStation } from '../api/gameStations'
+import { Card } from './ui/Card'
 
 const STATUS_LABELS: Record<string, string> = {
   created: 'Создан',
@@ -44,7 +45,7 @@ export function FuelOrdersPanel({
   const stationNameById = new Map(stations.map((s) => [s.id, s.name]))
 
   return (
-    <div style={{ border: '1px solid var(--border)', borderRadius: 8, padding: 16, marginBottom: 16 }}>
+    <Card style={{ marginBottom: 16 }}>
       <h3 style={{ margin: '0 0 8px', fontSize: 16 }}>Заказы топлива</h3>
       <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
         <thead>
@@ -76,6 +77,6 @@ export function FuelOrdersPanel({
           )}
         </tbody>
       </table>
-    </div>
+    </Card>
   )
 }

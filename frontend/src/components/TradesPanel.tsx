@@ -14,6 +14,7 @@ import {
   type TradeOffer,
   type TradeOfferType,
 } from '../api/trades'
+import { Card } from './ui/Card'
 
 const FUEL_LABELS: Record<string, string> = {
   ai92: 'АИ-92',
@@ -175,7 +176,7 @@ export function TradesPanel({
   const historyOffers = (offers ?? []).filter((o) => o.status !== 'pending')
 
   return (
-    <div style={{ border: '1px solid var(--border)', borderRadius: 8, padding: 16, marginBottom: 16 }}>
+    <Card style={{ marginBottom: 16 }}>
       <h3 style={{ margin: '0 0 8px', fontSize: 16 }}>Сделки</h3>
       {error && (
         <p role="alert" style={{ color: 'crimson', fontSize: 12 }}>
@@ -343,6 +344,6 @@ export function TradesPanel({
           </ul>
         </details>
       )}
-    </div>
+    </Card>
   )
 }

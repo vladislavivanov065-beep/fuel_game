@@ -76,7 +76,7 @@ export function StationUpgradesPanel({
             <span style={{ minWidth: 130 }}>{UPGRADE_LABELS[upgrade.upgrade_type]}</span>
             <span>ур. {upgrade.level}</span>
             {upgrade.status && (
-              <span style={{ color: 'var(--text-secondary, #666)' }}>
+              <span style={{ color: 'var(--text)' }}>
                 ({STATUS_LABELS[upgrade.status] ?? upgrade.status})
               </span>
             )}

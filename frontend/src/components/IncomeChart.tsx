@@ -1,5 +1,6 @@
 import { useId, useMemo, useState } from 'react'
 import type { FinancialTransaction } from '../api/finance'
+import { Card } from './ui/Card'
 
 interface IncomeChartProps {
   transactions: FinancialTransaction[]
@@ -38,12 +39,12 @@ export function IncomeChart({ transactions }: IncomeChartProps) {
 
   if (points.length === 0) {
     return (
-      <div style={{ border: '1px solid var(--border)', borderRadius: 8, padding: 16 }}>
+      <Card>
         <h3 style={{ margin: '0 0 8px', fontSize: 16 }}>Доход</h3>
         <p style={{ color: 'var(--text)', fontSize: 14 }}>
           Пока нет финансовых операций. График появится после первых продаж.
         </p>
-      </div>
+      </Card>
     )
   }
 
@@ -81,34 +82,9 @@ export function IncomeChart({ transactions }: IncomeChartProps) {
   const latest = points[points.length - 1]
 
   return (
-    <div
-      className="viz-root"
-      style={{ border: '1px solid var(--border)', borderRadius: 8, padding: 16 }}
-    >
-      <style>{`
-        .viz-root {
-          --chart-surface: #fcfcfb;
-          --chart-ink-primary: #0b0b0b;
-          --chart-ink-secondary: #52514e;
-          --chart-ink-muted: #898781;
-          --chart-gridline: #e1e0d9;
-          --chart-baseline: #c3c2b7;
-          --chart-series-1: #2a78d6;
-        }
-        @media (prefers-color-scheme: dark) {
-          .viz-root {
-            --chart-surface: #1a1a19;
-            --chart-ink-primary: #ffffff;
-            --chart-ink-secondary: #c3c2b7;
-            --chart-ink-muted: #898781;
-            --chart-gridline: #2c2c2a;
-            --chart-baseline: #383835;
-            --chart-series-1: #3987e5;
-          }
-        }
-      `}</style>
+    <Card>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline' }}>
-        <h3 style={{ margin: '0 0 8px', fontSize: 16, color: 'var(--chart-ink-primary)' }}>Доход</h3>
+        <h3 style={{ margin: '0 0 8px', fontSize: 16, color: 'var(--text-h)' }}>Доход</h3>
         <button
           type="button"
           onClick={() => setShowTable((v) => !v)}
@@ -155,8 +131,8 @@ export function IncomeChart({ transactions }: IncomeChartProps) {
           >
             <defs>
               <linearGradient id={gradientId} x1="0" y1="0" x2="0" y2="1">
-                <stop offset="0%" stopColor="var(--chart-series-1)" stopOpacity="0.25" />
-                <stop offset="100%" stopColor="var(--chart-series-1)" stopOpacity="0" />
+                <stop offset="0%" stopColor="var(--accent-2)" stopOpacity="0.25" />
+                <stop offset="100%" stopColor="var(--accent-2)" stopOpacity="0" />
               </linearGradient>
             </defs>
 
@@ -167,7 +143,7 @@ export function IncomeChart({ transactions }: IncomeChartProps) {
                   x2={WIDTH - PADDING_RIGHT}
                   y1={yFor(value)}
                   y2={yFor(value)}
-                  stroke="var(--chart-gridline)"
+                  stroke="var(--border)"
                   strokeWidth={1}
                 />
                 <text
@@ -176,7 +152,7 @@ export function IncomeChart({ transactions }: IncomeChartProps) {
                   textAnchor="end"
                   dominantBaseline="middle"
                   fontSize={11}
-                  fill="var(--chart-ink-muted)"
+                  fill="var(--text)"
                 >
                   {formatMoney(value)}
                 </text>
@@ -188,18 +164,18 @@ export function IncomeChart({ transactions }: IncomeChartProps) {
               x2={WIDTH - PADDING_RIGHT}
               y1={PADDING_TOP + plotHeight}
               y2={PADDING_TOP + plotHeight}
-              stroke="var(--chart-baseline)"
+              stroke="var(--border)"
               strokeWidth={1}
             />
 
             <path d={areaPath} fill={`url(#${gradientId})`} stroke="none" />
-            <path d={linePath} fill="none" stroke="var(--chart-series-1)" strokeWidth={2} strokeLinejoin="round" />
+            <path d={linePath} fill="none" stroke="var(--accent-2)" strokeWidth={2} strokeLinejoin="round" />
 
             <circle
               cx={xFor(latest.time)}
               cy={yFor(latest.balance)}
               r={4}
-              fill="var(--chart-series-1)"
+              fill="var(--accent-2)"
             />
 
             {hovered && (
@@ -209,7 +185,7 @@ export function IncomeChart({ transactions }: IncomeChartProps) {
                   x2={xFor(hovered.time)}
                   y1={PADDING_TOP}
                   y2={PADDING_TOP + plotHeight}
-                  stroke="var(--chart-baseline)"
+                  stroke="var(--border)"
                   strokeWidth={1}
                   strokeDasharray="3 3"
                 />
@@ -217,8 +193,8 @@ export function IncomeChart({ transactions }: IncomeChartProps) {
                   cx={xFor(hovered.time)}
                   cy={yFor(hovered.balance)}
                   r={4}
-                  fill="var(--chart-surface)"
-                  stroke="var(--chart-series-1)"
+                  fill="var(--surface)"
+                  stroke="var(--accent-2)"
                   strokeWidth={2}
                 />
               </>
@@ -238,25 +214,21 @@ export function IncomeChart({ transactions }: IncomeChartProps) {
             ))}
           </svg>
 
-          <div style={{ fontSize: 13, color: 'var(--chart-ink-secondary)', minHeight: 20 }}>
+          <div style={{ fontSize: 13, color: 'var(--text)', minHeight: 20 }}>
             {hovered ? (
               <span>
                 {formatTime(hovered.tx.created_at)} — {hovered.tx.transaction_type}:{' '}
-                <strong style={{ color: 'var(--chart-ink-primary)' }}>
-                  {formatMoney(hovered.balance)}
-                </strong>
+                <strong style={{ color: 'var(--text-h)' }}>{formatMoney(hovered.balance)}</strong>
               </span>
             ) : (
               <span>
                 Текущий баланс:{' '}
-                <strong style={{ color: 'var(--chart-ink-primary)' }}>
-                  {formatMoney(latest.balance)}
-                </strong>
+                <strong style={{ color: 'var(--text-h)' }}>{formatMoney(latest.balance)}</strong>
               </span>
             )}
           </div>
         </>
       )}
-    </div>
+    </Card>
   )
 }
