@@ -12,6 +12,7 @@ from app.db.models.game_event import GameEvent
 from app.db.models.game_player import GamePlayer
 from app.db.models.game_room import GameRoom
 from app.db.models.game_station import GameStation
+from app.db.models.password_reset_token import PasswordResetToken
 from app.db.models.refinery import Refinery
 from app.db.models.refinery_fuel import RefineryFuel
 from app.db.models.road_accident import RoadAccident
@@ -66,6 +67,7 @@ async def _wipe_database() -> None:
         await db.execute(delete(TrafficLight))
         await db.execute(delete(RoadNode))
         await db.execute(delete(Session))
+        await db.execute(delete(PasswordResetToken))
         await db.execute(delete(User))
         await db.commit()
 

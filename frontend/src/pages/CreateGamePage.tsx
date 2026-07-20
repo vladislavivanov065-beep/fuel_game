@@ -2,6 +2,8 @@ import { type FormEvent, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { createGame } from '../api/games'
 import { ApiError } from '../api/client'
+import { Button } from '../components/ui/Button'
+import { Card } from '../components/ui/Card'
 
 export function CreateGamePage() {
   const [name, setName] = useState('')
@@ -24,11 +26,14 @@ export function CreateGamePage() {
   }
 
   return (
-    <main>
-      <h1>Create a new game</h1>
-      <form onSubmit={(e) => void handleSubmit(e)}>
+    <Card style={{ maxWidth: 420 }}>
+      <h2>Новая игра</h2>
+      <form
+        onSubmit={(e) => void handleSubmit(e)}
+        style={{ display: 'flex', flexDirection: 'column', gap: 12 }}
+      >
         <label>
-          Game name
+          Название игры
           <input
             type="text"
             value={name}
@@ -37,11 +42,15 @@ export function CreateGamePage() {
             maxLength={100}
           />
         </label>
-        {error && <p role="alert">{error}</p>}
-        <button type="submit" disabled={submitting}>
-          {submitting ? 'Creating...' : 'Create game'}
-        </button>
+        {error && (
+          <p role="alert" style={{ color: 'var(--danger)' }}>
+            {error}
+          </p>
+        )}
+        <Button type="submit" disabled={submitting}>
+          {submitting ? 'Создание...' : 'Создать игру'}
+        </Button>
       </form>
-    </main>
+    </Card>
   )
 }

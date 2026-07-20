@@ -27,6 +27,9 @@ import { GameResultsPanel } from '../components/GameResultsPanel'
 import { IncomeChart } from '../components/IncomeChart'
 import { StationUpgradesPanel } from '../components/StationUpgradesPanel'
 import { TradesPanel } from '../components/TradesPanel'
+import { Button } from '../components/ui/Button'
+import { Card } from '../components/ui/Card'
+import { StatTile } from '../components/ui/StatTile'
 import {
   MARI_EL_BOUNDS,
   MARI_EL_CENTER,
@@ -136,7 +139,7 @@ function NetworkPriceEditor({ gameId, onSaved }: { gameId: string; onSaved: () =
   }
 
   return (
-    <div style={{ border: '1px solid var(--border)', borderRadius: 8, padding: 16, marginBottom: 16 }}>
+    <Card style={{ marginBottom: 16 }}>
       <h3 style={{ margin: '0 0 8px', fontSize: 16 }}>Цена по всей сети</h3>
       <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
         <select value={fuelType} onChange={(e) => setFuelType(e.target.value as FuelType)}>
@@ -154,17 +157,22 @@ function NetworkPriceEditor({ gameId, onSaved }: { gameId: string; onSaved: () =
           value={price}
           onChange={(e) => setPrice(e.target.value)}
         />
-        <button type="button" onClick={() => void handleApply()} disabled={busy || !price}>
+        <Button
+          type="button"
+          variant="secondary"
+          onClick={() => void handleApply()}
+          disabled={busy || !price}
+        >
           {busy ? 'Применяю...' : 'Применить'}
-        </button>
+        </Button>
       </div>
       {message && <p style={{ fontSize: 12, color: 'var(--text)' }}>{message}</p>}
       {error && (
-        <p role="alert" style={{ fontSize: 12, color: 'crimson' }}>
+        <p role="alert" style={{ fontSize: 12, color: 'var(--danger)' }}>
           {error}
         </p>
       )}
-    </div>
+    </Card>
   )
 }
 
@@ -545,8 +553,9 @@ export function GameMapPage() {
     refetchInterval: 5000,
   })
 
-  const myPlayerId = game?.players.find((p) => p.user_id === user?.id)?.id
-  const isAdmin = game?.players.find((p) => p.user_id === user?.id)?.is_admin ?? false
+  const myPlayer = game?.players.find((p) => p.user_id === user?.id)
+  const myPlayerId = myPlayer?.id
+  const isAdmin = myPlayer?.is_admin ?? false
   const isFinished = game?.status === 'finished'
   const ownsAnyStation = stations?.some((s) => s.owner_player_id === myPlayerId) ?? false
   const myStations = stations?.filter((s) => s.owner_player_id === myPlayerId) ?? []
@@ -654,13 +663,33 @@ export function GameMapPage() {
   }
 
   return (
-    <main>
-      <h1>Game map</h1>
-      <p>
-        <Link to={`/games/${gameId}`}>Back to lobby</Link>
-      </p>
-      {isLoading && <p>Loading stations...</p>}
-      {error && <p role="alert">{error}</p>}
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+      <Card>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+          <h2>{game?.name ?? 'Карта игры'}</h2>
+          <Link to={`/games/${gameId}`}>
+            <Button variant="secondary">Назад в лобби</Button>
+          </Link>
+        </div>
+        {myPlayer && (
+          <div style={{ display: 'flex', gap: 12, marginTop: 12 }}>
+            <StatTile
+              label="Баланс"
+              value={`${Number(myPlayer.balance).toLocaleString('ru-RU')} ₽`}
+            />
+            <StatTile
+              label="Net worth"
+              value={`${Number(myPlayer.net_worth).toLocaleString('ru-RU')} ₽`}
+            />
+          </div>
+        )}
+        {isLoading && <p>Loading stations...</p>}
+        {error && (
+          <p role="alert" style={{ color: 'var(--danger)' }}>
+            {error}
+          </p>
+        )}
+      </Card>
       <div style={{ height: '70vh', width: '100%' }}>
         <MapContainer
           center={MARI_EL_CENTER}
@@ -794,6 +823,6 @@ export function GameMapPage() {
       {fuelOrders && <FuelOrdersPanel orders={fuelOrders} stations={stations ?? []} />}
 
       {transactions && <IncomeChart transactions={transactions} />}
-    </main>
+    </div>
   )
 }

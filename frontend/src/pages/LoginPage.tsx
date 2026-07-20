@@ -1,5 +1,7 @@
 import { type FormEvent, useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
+import { AuthLayout } from '../components/layout/AuthLayout'
+import { Button } from '../components/ui/Button'
 import { useAuthStore } from '../stores/authStore'
 
 export function LoginPage() {
@@ -24,9 +26,12 @@ export function LoginPage() {
   }
 
   return (
-    <main>
-      <h1>Sign in</h1>
-      <form onSubmit={(e) => void handleSubmit(e)}>
+    <AuthLayout>
+      <h1 style={{ fontSize: 24, textAlign: 'center' }}>Вход</h1>
+      <form
+        onSubmit={(e) => void handleSubmit(e)}
+        style={{ display: 'flex', flexDirection: 'column', gap: 12 }}
+      >
         <label>
           Email
           <input
@@ -37,7 +42,7 @@ export function LoginPage() {
           />
         </label>
         <label>
-          Password
+          Пароль
           <input
             type="password"
             value={password}
@@ -45,14 +50,21 @@ export function LoginPage() {
             required
           />
         </label>
-        {error && <p role="alert">{error}</p>}
-        <button type="submit" disabled={submitting}>
-          {submitting ? 'Signing in...' : 'Sign in'}
-        </button>
+        {error && (
+          <p role="alert" style={{ color: 'var(--danger)' }}>
+            {error}
+          </p>
+        )}
+        <Button type="submit" disabled={submitting}>
+          {submitting ? 'Вход...' : 'Войти'}
+        </Button>
       </form>
-      <p>
-        No account? <Link to="/register">Register</Link>
+      <p style={{ textAlign: 'center', marginTop: 16 }}>
+        <Link to="/forgot-password">Забыли пароль?</Link>
       </p>
-    </main>
+      <p style={{ textAlign: 'center', marginTop: 8 }}>
+        Нет аккаунта? <Link to="/register">Зарегистрироваться</Link>
+      </p>
+    </AuthLayout>
   )
 }

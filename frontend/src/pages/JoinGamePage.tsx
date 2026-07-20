@@ -3,6 +3,8 @@ import { useState } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
 import { ApiError } from '../api/client'
 import { joinGame, resolveInviteCode } from '../api/games'
+import { Button } from '../components/ui/Button'
+import { Card } from '../components/ui/Card'
 
 export function JoinGamePage() {
   const { inviteCode } = useParams<{ inviteCode: string }>()
@@ -38,21 +40,34 @@ export function JoinGamePage() {
   }
 
   return (
-    <main>
-      <h1>Join game</h1>
-      {isLoading && <p>Loading invite...</p>}
-      {isError && <p role="alert">Invite code not found.</p>}
+    <Card style={{ maxWidth: 420 }}>
+      <h2>Присоединиться к игре</h2>
+      {isLoading && <p>Загрузка приглашения...</p>}
+      {isError && (
+        <p role="alert" style={{ color: 'var(--danger)' }}>
+          Код приглашения не найден.
+        </p>
+      )}
       {preview && (
         <>
           <p>
-            {preview.name} — {preview.status} ({preview.player_count} players)
+            {preview.name} — {preview.status} ({preview.player_count} игроков)
           </p>
-          {error && <p role="alert">{error}</p>}
-          <button type="button" onClick={() => void handleJoin()} disabled={joining}>
-            {joining ? 'Joining...' : 'Join'}
-          </button>
+          {error && (
+            <p role="alert" style={{ color: 'var(--danger)' }}>
+              {error}
+            </p>
+          )}
+          <Button
+            type="button"
+            onClick={() => void handleJoin()}
+            disabled={joining}
+            style={{ marginTop: 12 }}
+          >
+            {joining ? 'Вход...' : 'Войти'}
+          </Button>
         </>
       )}
-    </main>
+    </Card>
   )
 }

@@ -2,6 +2,9 @@ import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { useEffect, useState } from 'react'
 import { ApiError } from '../api/client'
 import { type EventType, listActiveEvents, listEventHistory, triggerEvent } from '../api/events'
+import { Badge } from './ui/Badge'
+import { Button } from './ui/Button'
+import { Card } from './ui/Card'
 
 const EVENT_LABELS: Record<EventType, string> = {
   storm: 'Гроза',
@@ -55,9 +58,7 @@ export function EventsPanel({ gameId, isAdmin }: { gameId: string; isAdmin: bool
   }
 
   return (
-    <div
-      style={{ border: '1px solid var(--border)', borderRadius: 8, padding: 16, marginBottom: 16 }}
-    >
+    <Card style={{ marginBottom: 16 }}>
       <h3 style={{ margin: '0 0 8px', fontSize: 16 }}>События</h3>
       {activeEvents && activeEvents.length > 0 ? (
         <ul style={{ margin: 0, paddingLeft: 18 }}>
@@ -76,24 +77,42 @@ export function EventsPanel({ gameId, isAdmin }: { gameId: string; isAdmin: bool
       )}
 
       {isAdmin && (
-        <div style={{ marginTop: 8, display: 'flex', gap: 8, alignItems: 'center' }}>
-          <select
-            value={selectedType}
-            onChange={(e) => setSelectedType(e.target.value as EventType)}
-          >
-            {Object.entries(EVENT_LABELS).map(([value, label]) => (
-              <option key={value} value={value}>
-                {label}
-              </option>
-            ))}
-          </select>
-          <button type="button" onClick={() => void handleTrigger()} disabled={busy}>
-            {busy ? 'Запуск...' : 'Запустить событие'}
-          </button>
+        <div
+          style={{
+            marginTop: 12,
+            padding: 12,
+            border: '1px solid var(--accent-border)',
+            background: 'var(--accent-bg)',
+            borderRadius: 'var(--radius-sm)',
+          }}
+        >
+          <div style={{ marginBottom: 8 }}>
+            <Badge>Admin</Badge>
+          </div>
+          <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+            <select
+              value={selectedType}
+              onChange={(e) => setSelectedType(e.target.value as EventType)}
+            >
+              {Object.entries(EVENT_LABELS).map(([value, label]) => (
+                <option key={value} value={value}>
+                  {label}
+                </option>
+              ))}
+            </select>
+            <Button
+              type="button"
+              variant="secondary"
+              onClick={() => void handleTrigger()}
+              disabled={busy}
+            >
+              {busy ? 'Запуск...' : 'Запустить событие'}
+            </Button>
+          </div>
         </div>
       )}
       {error && (
-        <p role="alert" style={{ color: 'crimson', fontSize: 12 }}>
+        <p role="alert" style={{ color: 'var(--danger)', fontSize: 12 }}>
           {error}
         </p>
       )}
@@ -111,6 +130,6 @@ export function EventsPanel({ gameId, isAdmin }: { gameId: string; isAdmin: bool
           </ul>
         </details>
       )}
-    </div>
+    </Card>
   )
 }

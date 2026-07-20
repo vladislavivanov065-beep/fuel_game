@@ -1,4 +1,5 @@
 import type { GamePlayer } from '../api/games'
+import { Card } from './ui/Card'
 
 export function GameResultsPanel({
   players,
@@ -10,18 +11,10 @@ export function GameResultsPanel({
   const ranked = [...players].sort((a, b) => Number(b.net_worth) - Number(a.net_worth))
 
   return (
-    <div
-      style={{
-        border: '2px solid #d4af37',
-        borderRadius: 8,
-        padding: 16,
-        marginBottom: 16,
-        background: 'var(--surface, rgba(212, 175, 55, 0.05))',
-      }}
-    >
+    <Card style={{ border: '2px solid #d4af37', marginBottom: 16 }}>
       <h2 style={{ margin: '0 0 4px', fontSize: 20 }}>Игра завершена</h2>
       {finishedAt && (
-        <p style={{ fontSize: 12, color: 'var(--text-secondary, #666)', margin: '0 0 12px' }}>
+        <p style={{ fontSize: 12, color: 'var(--text)', margin: '0 0 12px' }}>
           Завершена: {new Date(finishedAt).toLocaleString()}
         </p>
       )}
@@ -48,6 +41,6 @@ export function GameResultsPanel({
           </li>
         ))}
       </ol>
-    </div>
+    </Card>
   )
 }

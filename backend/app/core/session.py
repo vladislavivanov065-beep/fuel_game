@@ -32,3 +32,8 @@ async def get_session_user_id(db: AsyncSession, token: str) -> uuid.UUID | None:
 async def delete_session(db: AsyncSession, token: str) -> None:
     await db.execute(delete(Session).where(Session.token == token))
     await db.commit()
+
+
+async def delete_all_sessions_for_user(db: AsyncSession, user_id: uuid.UUID) -> None:
+    await db.execute(delete(Session).where(Session.user_id == user_id))
+    await db.commit()
