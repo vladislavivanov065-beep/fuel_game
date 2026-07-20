@@ -3,6 +3,7 @@ import { useEffect, useState } from 'react'
 import 'leaflet/dist/leaflet.css'
 import { Link, useParams } from 'react-router-dom'
 import { Circle, CircleMarker, MapContainer, Marker, Polyline, Popup, TileLayer } from 'react-leaflet'
+import { listActiveAccidents, type RoadAccident } from '../api/accidents'
 import { ApiError } from '../api/client'
 import { type EventRegion, listActiveEvents } from '../api/events'
 import { listMyTransactions } from '../api/finance'
@@ -352,6 +353,54 @@ function RoadNetworkLayer({ mapData }: { mapData: MapData | undefined }) {
   )
 }
 
+function AccidentMarkers({
+  accidents,
+  mapData,
+}: {
+  accidents: RoadAccident[]
+  mapData: MapData | undefined
+}) {
+  if (!mapData || accidents.length === 0) return null
+
+  const nodeById = new Map(mapData.road_nodes.map((node) => [node.id, node]))
+  const edgeById = new Map(mapData.road_edges.map((edge) => [edge.id, edge]))
+
+  return (
+    <>
+      {accidents.map((accident) => {
+        const edge = edgeById.get(accident.road_edge_id)
+        if (!edge) return null
+        const from = nodeById.get(edge.from_node_id)
+        const to = nodeById.get(edge.to_node_id)
+        if (!from || !to) return null
+        const midpoint: [number, number] = [
+          (from.latitude + to.latitude) / 2,
+          (from.longitude + to.longitude) / 2,
+        ]
+        return (
+          <CircleMarker
+            key={accident.id}
+            center={midpoint}
+            radius={accident.severity === 'major' ? 7 : 5}
+            pathOptions={{
+              color: '#7f1d1d',
+              weight: 2,
+              fillColor: accident.severity === 'major' ? '#c62828' : '#f57c00',
+              fillOpacity: 0.9,
+            }}
+          >
+            <Popup>
+              ДТП ({accident.severity === 'major' ? 'серьёзное' : 'лёгкое'})
+              <br />
+              {accident.severity === 'major' ? 'Дорога перекрыта' : 'Движение затруднено'}
+            </Popup>
+          </CircleMarker>
+        )
+      })}
+    </>
+  )
+}
+
 function TruckMarkers({ trucks }: { trucks: Truck[] }) {
   return (
     <>
@@ -482,6 +531,13 @@ export function GameMapPage() {
     refetchInterval: 5000,
   })
 
+  const { data: accidents } = useQuery({
+    queryKey: ['accidents', gameId],
+    queryFn: () => listActiveAccidents(gameId ?? ''),
+    enabled: Boolean(gameId),
+    refetchInterval: 5000,
+  })
+
   const { data: activeEvents } = useQuery({
     queryKey: ['events', gameId],
     queryFn: () => listActiveEvents(gameId ?? ''),
@@ -539,6 +595,10 @@ export function GameMapPage() {
       void queryClient.invalidateQueries({ queryKey: ['stationUpgrades', gameId] })
       void queryClient.invalidateQueries({ queryKey: ['gameStations', gameId] })
       void queryClient.invalidateQueries({ queryKey: ['game', gameId] })
+    }
+    if (event.event === 'accident.started' || event.event === 'accident.ended') {
+      void queryClient.invalidateQueries({ queryKey: ['accidents', gameId] })
+      void queryClient.invalidateQueries({ queryKey: ['mapData'] })
     }
     if (event.event === 'game_event.started' || event.event === 'game_event.ended') {
       void queryClient.invalidateQueries({ queryKey: ['events', gameId] })
@@ -612,6 +672,7 @@ export function GameMapPage() {
             url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
           />
           <RoadNetworkLayer mapData={mapData} />
+          <AccidentMarkers accidents={accidents ?? []} mapData={mapData} />
           <TruckMarkers trucks={trucks ?? []} />
           <VehicleMarkers vehicles={vehicles ?? []} />
           {activeEvents

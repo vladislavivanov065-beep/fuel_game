@@ -14,6 +14,7 @@ from app.db.models.game_room import GameRoom
 from app.db.models.game_station import GameStation
 from app.db.models.refinery import Refinery
 from app.db.models.refinery_fuel import RefineryFuel
+from app.db.models.road_accident import RoadAccident
 from app.db.models.road_edge import RoadEdge
 from app.db.models.road_node import RoadNode
 from app.db.models.session import Session
@@ -57,6 +58,7 @@ async def _wipe_database() -> None:
         await db.execute(delete(RefineryFuel))
         await db.execute(delete(GamePlayer))
         await db.execute(delete(GameEvent))
+        await db.execute(delete(RoadAccident))
         await db.execute(delete(GameRoom))
         await db.execute(delete(StationTemplate))
         await db.execute(delete(Refinery))

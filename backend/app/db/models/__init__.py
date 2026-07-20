@@ -8,6 +8,7 @@ from app.db.models.game_room import GameRoom, GameStatus
 from app.db.models.game_station import GameStation
 from app.db.models.refinery import Refinery
 from app.db.models.refinery_fuel import RefineryFuel
+from app.db.models.road_accident import AccidentSeverity, RoadAccident
 from app.db.models.road_edge import RoadEdge
 from app.db.models.road_node import RoadNode
 from app.db.models.session import Session
@@ -21,6 +22,7 @@ from app.db.models.user import User
 from app.db.models.vehicle import DriverType, Vehicle, VehicleStatus, VehicleType
 
 __all__ = [
+    "AccidentSeverity",
     "DriverType",
     "EventStatus",
     "EventType",
@@ -38,6 +40,7 @@ __all__ = [
     "GameStatus",
     "Refinery",
     "RefineryFuel",
+    "RoadAccident",
     "RoadEdge",
     "RoadNode",
     "Session",
