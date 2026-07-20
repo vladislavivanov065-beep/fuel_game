@@ -21,8 +21,10 @@ import { interpolateTruckPosition, listTrucks, type Truck } from '../api/trucks'
 import { interpolateVehiclePosition, listVehicles, type Vehicle } from '../api/vehicles'
 import { EventsPanel } from '../components/EventsPanel'
 import { FuelOrdersPanel } from '../components/FuelOrdersPanel'
+import { GameResultsPanel } from '../components/GameResultsPanel'
 import { IncomeChart } from '../components/IncomeChart'
 import { StationUpgradesPanel } from '../components/StationUpgradesPanel'
+import { TradesPanel } from '../components/TradesPanel'
 import {
   MARI_EL_BOUNDS,
   MARI_EL_CENTER,
@@ -420,6 +422,7 @@ export function GameMapPage() {
 
   const myPlayerId = game?.players.find((p) => p.user_id === user?.id)?.id
   const isAdmin = game?.players.find((p) => p.user_id === user?.id)?.is_admin ?? false
+  const isFinished = game?.status === 'finished'
   const ownsAnyStation = stations?.some((s) => s.owner_player_id === myPlayerId) ?? false
   const myStations = stations?.filter((s) => s.owner_player_id === myPlayerId) ?? []
 
@@ -473,6 +476,23 @@ export function GameMapPage() {
       void queryClient.invalidateQueries({ queryKey: ['eventHistory', gameId] })
       void queryClient.invalidateQueries({ queryKey: ['gameStations', gameId] })
       void queryClient.invalidateQueries({ queryKey: ['game', gameId] })
+      void queryClient.invalidateQueries({ queryKey: ['transactions', gameId] })
+    }
+    if (
+      event.event === 'trade.created' ||
+      event.event === 'trade.accepted' ||
+      event.event === 'trade.rejected' ||
+      event.event === 'trade.cancelled' ||
+      event.event === 'trade.expired'
+    ) {
+      void queryClient.invalidateQueries({ queryKey: ['trades', gameId] })
+      void queryClient.invalidateQueries({ queryKey: ['gameStations', gameId] })
+      void queryClient.invalidateQueries({ queryKey: ['game', gameId] })
+      void queryClient.invalidateQueries({ queryKey: ['transactions', gameId] })
+    }
+    if (event.event === 'game.finished') {
+      void queryClient.invalidateQueries({ queryKey: ['game', gameId] })
+      void queryClient.invalidateQueries({ queryKey: ['gameStations', gameId] })
       void queryClient.invalidateQueries({ queryKey: ['transactions', gameId] })
     }
   })
@@ -549,7 +569,7 @@ export function GameMapPage() {
                     ₽/л
                   </span>
                 ))}
-                {gameId && (
+                {gameId && !isFinished && (
                   <RefineryOrderForm
                     gameId={gameId}
                     refineryId={refinery.id}
@@ -578,7 +598,7 @@ export function GameMapPage() {
                     : 'Free'}
                   <br />
                   Price: {station.purchase_price}
-                  {!station.owner_player_id && (
+                  {!station.owner_player_id && !isFinished && (
                     <>
                       <br />
                       <button
@@ -594,14 +614,14 @@ export function GameMapPage() {
                     <>
                       <br />
                       (You own this station)
-                      {gameId && (
+                      {gameId && !isFinished && (
                         <StationPriceEditor
                           gameId={gameId}
                           station={station}
                           onSaved={refreshAfterPriceChange}
                         />
                       )}
-                      {gameId && (
+                      {gameId && !isFinished && (
                         <StationUpgradesPanel gameId={gameId} stationId={station.id} />
                       )}
                     </>
@@ -613,9 +633,27 @@ export function GameMapPage() {
         </MapContainer>
       </div>
 
+      {isFinished && game && (
+        <GameResultsPanel players={game.players} finishedAt={game.finished_at} />
+      )}
+
       {gameId && <EventsPanel gameId={gameId} isAdmin={isAdmin} />}
 
-      {gameId && ownsAnyStation && (
+      {gameId && !isFinished && (
+        <TradesPanel
+          gameId={gameId}
+          myPlayerId={myPlayerId}
+          myUserId={user?.id}
+          myStations={myStations}
+          otherPlayers={
+            game?.players
+              .filter((p) => p.user_id !== user?.id)
+              .map((p) => ({ userId: p.user_id, displayName: p.display_name })) ?? []
+          }
+        />
+      )}
+
+      {gameId && ownsAnyStation && !isFinished && (
         <NetworkPriceEditor gameId={gameId} onSaved={refreshAfterPriceChange} />
       )}
 

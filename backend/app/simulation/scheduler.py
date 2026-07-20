@@ -2,6 +2,7 @@ import asyncio
 import logging
 import uuid
 from datetime import UTC, datetime
+from decimal import Decimal
 
 from sqlalchemy import select
 
@@ -10,7 +11,15 @@ from app.db.models.truck import Truck
 from app.db.models.vehicle import Vehicle
 from app.db.session import async_session_factory
 from app.schemas.game_settings import GameSettings
-from app.simulation import economy, events, station_upgrades, trucks, vehicles
+from app.simulation import (
+    economy,
+    events,
+    game_lifecycle,
+    station_upgrades,
+    trades,
+    trucks,
+    vehicles,
+)
 from app.websocket.connection_manager import connection_manager
 
 logger = logging.getLogger(__name__)
@@ -273,9 +282,47 @@ async def _expire_events(game_id: uuid.UUID) -> None:
         await connection_manager.broadcast(game_id, "game_event.ended", {"event_id": str(event_id)})
 
 
+async def _expire_trade_offers(game_id: uuid.UUID) -> None:
+    async with async_session_factory() as db:
+        try:
+            expired_ids = await trades.expire_due_trade_offers_for_game(db, game_id)
+        except Exception:
+            logger.exception("Trade offer expiry failed for game %s", game_id)
+            return
+
+    for trade_id in expired_ids:
+        await connection_manager.broadcast(game_id, "trade.expired", {"trade_id": str(trade_id)})
+
+
+async def _finish_due_games(games: list[GameRoom]) -> list[GameRoom]:
+    remaining: list[GameRoom] = []
+    for game in games:
+        net_worth: dict[uuid.UUID, Decimal] | None = None
+        async with async_session_factory() as db:
+            try:
+                fresh_game = await db.get(GameRoom, game.id)
+                if fresh_game is not None:
+                    net_worth = await game_lifecycle.maybe_finish_game(db, fresh_game)
+            except Exception:
+                logger.exception("Game finish check failed for game %s", game.id)
+
+        if net_worth is None:
+            remaining.append(game)
+            continue
+
+        leaderboard = sorted(
+            ({"player_id": str(pid), "net_worth": str(value)} for pid, value in net_worth.items()),
+            key=lambda row: Decimal(row["net_worth"]),
+            reverse=True,
+        )
+        await connection_manager.broadcast(game.id, "game.finished", {"leaderboard": leaderboard})
+
+    return remaining
+
+
 async def _run_tick_cycle() -> None:
     now = datetime.now(UTC)
-    games = await _running_games()
+    games = await _finish_due_games(await _running_games())
 
     for game_id in _due_game_ids(games, now):
         async with async_session_factory() as db:
@@ -299,6 +346,7 @@ async def _run_tick_cycle() -> None:
         await _update_vehicles(game.id, now)
         await _update_station_upgrades(game.id)
         await _expire_events(game.id)
+        await _expire_trade_offers(game.id)
 
 
 async def _run_forever() -> None:
