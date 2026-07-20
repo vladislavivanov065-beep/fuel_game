@@ -25,6 +25,19 @@ class DriverType(enum.StrEnum):
     RANDOM = "random"
 
 
+class VehicleType(enum.StrEnum):
+    HATCHBACK = "hatchback"
+    JEEP = "jeep"
+    PICKUP = "pickup"
+    MOTORCYCLE = "motorcycle"
+    MARSHRUTKA = "marshrutka"
+    CARGO_TRUCK = "cargo_truck"
+    TROLLEYBUS = "trolleybus"
+    AMBULANCE = "ambulance"
+    POLICE = "police"
+    FIRE_TRUCK = "fire_truck"
+
+
 class Vehicle(Base):
     __tablename__ = "vehicles"
 
@@ -39,6 +52,16 @@ class Vehicle(Base):
             native_enum=True,
             values_callable=lambda enum_cls: [member.value for member in enum_cls],
         ),
+        nullable=False,
+    )
+    vehicle_type: Mapped[VehicleType] = mapped_column(
+        Enum(
+            VehicleType,
+            name="vehicle_type",
+            native_enum=True,
+            values_callable=lambda enum_cls: [member.value for member in enum_cls],
+        ),
+        default=VehicleType.HATCHBACK,
         nullable=False,
     )
     fuel_type: Mapped[FuelType] = mapped_column(
@@ -71,6 +94,7 @@ class Vehicle(Base):
     route_progress: Mapped[float] = mapped_column(Float, default=0.0, nullable=False)
     current_latitude: Mapped[float] = mapped_column(Float, nullable=False)
     current_longitude: Mapped[float] = mapped_column(Float, nullable=False)
+    heading: Mapped[float] = mapped_column(Float, default=0.0, nullable=False)
 
     tank_capacity_liters: Mapped[Decimal] = mapped_column(Numeric(8, 2), nullable=False)
     fuel_liters: Mapped[Decimal] = mapped_column(Numeric(8, 2), nullable=False)

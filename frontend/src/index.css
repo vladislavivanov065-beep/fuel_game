@@ -109,3 +109,17 @@ code {
   padding: 4px 8px;
   background: var(--code-bg);
 }
+
+@keyframes emergency-lights-pulse {
+  0%,
+  100% {
+    box-shadow: 0 0 3px 2px rgba(220, 20, 20, 0.9);
+  }
+  50% {
+    box-shadow: 0 0 3px 2px rgba(20, 60, 220, 0.9);
+  }
+}
+
+.vehicle-marker-emergency {
+  animation: emergency-lights-pulse 0.6s infinite;
+}

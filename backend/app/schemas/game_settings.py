@@ -4,6 +4,8 @@ from typing import Self
 
 from pydantic import BaseModel, Field, model_validator
 
+from app.db.models.station_fuel import FuelType
+
 
 class StationUpgradeTypeSettings(BaseModel):
     """Per-upgrade-type coefficients (TECHNICAL_SPEC.md section 19): every
@@ -98,6 +100,89 @@ _DEFAULT_STATION_UPGRADES: dict[str, StationUpgradeTypeSettings] = {
         maintenance_per_level=Decimal("2000"),
         bonus_per_level=0.5,
         revenue_per_level=Decimal("0"),
+    ),
+}
+
+
+class VehicleTypeSettings(BaseModel):
+    """Per-vehicle-type physical/behavioral coefficients (Этап 14): shape/size,
+    speed, road/fuel restrictions and emergency-vehicle traffic-light/queue
+    bypass — orthogonal to ``DriverType`` (which only encodes purchasing
+    behavior).
+
+    ``fuel_types`` is the set of fuel types this vehicle type may randomly be
+    assigned when it refuels (empty/irrelevant when ``refuels`` is False, as
+    for trolleybuses which never visit a station).
+    ``excluded_road_types`` lists ``RoadEdge.road_type`` values this vehicle
+    type may never route through (e.g. cargo trucks avoiding city streets).
+    ``requires_trolleybus_wire`` restricts routing to ``RoadEdge.
+    trolleybus_wire`` edges only (Этап 14.4).
+    ``is_emergency`` vehicles ignore traffic lights and following-distance/
+    capacity backpressure from other vehicles (Этап 14.3).
+    """
+
+    length_meters: float = Field(gt=0)
+    speed_factor: float = Field(gt=0)
+    is_emergency: bool = False
+    refuels: bool = True
+    fuel_types: list[FuelType] = Field(default_factory=lambda: list(FuelType))
+    excluded_road_types: list[str] = Field(default_factory=list)
+    requires_trolleybus_wire: bool = False
+    spawn_weight: float = Field(default=1.0, ge=0)
+
+
+_DEFAULT_VEHICLE_TYPES: dict[str, VehicleTypeSettings] = {
+    "hatchback": VehicleTypeSettings(length_meters=4.2, speed_factor=1.0, spawn_weight=3.0),
+    "jeep": VehicleTypeSettings(length_meters=4.6, speed_factor=0.95, spawn_weight=1.5),
+    "pickup": VehicleTypeSettings(length_meters=4.8, speed_factor=0.95, spawn_weight=1.0),
+    "motorcycle": VehicleTypeSettings(
+        length_meters=2.2,
+        speed_factor=1.3,
+        fuel_types=[FuelType.AI92],
+        spawn_weight=1.5,
+    ),
+    "marshrutka": VehicleTypeSettings(
+        length_meters=6.0,
+        speed_factor=0.9,
+        fuel_types=[FuelType.DIESEL],
+        spawn_weight=1.0,
+    ),
+    "cargo_truck": VehicleTypeSettings(
+        length_meters=10.0,
+        speed_factor=0.8,
+        refuels=True,
+        fuel_types=[FuelType.DIESEL],
+        excluded_road_types=["residential", "living_street", "service"],
+        spawn_weight=1.0,
+    ),
+    "trolleybus": VehicleTypeSettings(
+        length_meters=12.0,
+        speed_factor=0.85,
+        refuels=False,
+        fuel_types=[],
+        requires_trolleybus_wire=True,
+        spawn_weight=0.5,
+    ),
+    "ambulance": VehicleTypeSettings(
+        length_meters=5.0,
+        speed_factor=1.1,
+        is_emergency=True,
+        fuel_types=[FuelType.AI92, FuelType.AI95],
+        spawn_weight=0.2,
+    ),
+    "police": VehicleTypeSettings(
+        length_meters=4.5,
+        speed_factor=1.1,
+        is_emergency=True,
+        fuel_types=[FuelType.AI92, FuelType.AI95],
+        spawn_weight=0.2,
+    ),
+    "fire_truck": VehicleTypeSettings(
+        length_meters=9.0,
+        speed_factor=0.9,
+        is_emergency=True,
+        fuel_types=[FuelType.DIESEL],
+        spawn_weight=0.1,
     ),
 }
 
@@ -261,6 +346,10 @@ class GameSettings(BaseModel):
     vehicle_max_queue_length: int = Field(default=8, gt=0)
     station_rating_increase_per_sale: float = Field(default=0.01, ge=0)
     station_rating_decrease_per_stockout: float = Field(default=0.05, ge=0)
+
+    vehicle_types: dict[str, VehicleTypeSettings] = Field(
+        default_factory=lambda: dict(_DEFAULT_VEHICLE_TYPES)
+    )
 
     station_upgrades: dict[str, StationUpgradeTypeSettings] = Field(
         default_factory=lambda: dict(_DEFAULT_STATION_UPGRADES)

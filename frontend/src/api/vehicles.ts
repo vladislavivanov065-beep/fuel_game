@@ -10,11 +10,13 @@ export interface Vehicle {
   id: string
   game_id: string
   driver_type: string
+  vehicle_type: string
   fuel_type: string
   status: string
   route_progress: number
   current_latitude: number
   current_longitude: number
+  heading: number
   route_points: VehicleRoutePoint[]
   total_distance_km: number
   total_travel_time_minutes: number

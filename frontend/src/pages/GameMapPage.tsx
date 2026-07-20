@@ -31,7 +31,13 @@ import {
   MARI_EL_DEFAULT_ZOOM,
   MARI_EL_MIN_ZOOM,
 } from '../map/bounds'
-import { ownedStationIcon, refineryIcon, stationIcon, truckIcon, vehicleIcon } from '../map/icons'
+import {
+  ownedStationIcon,
+  refineryIcon,
+  stationIcon,
+  truckIcon,
+  vehicleIconForType,
+} from '../map/icons'
 import { useAuthStore } from '../stores/authStore'
 import { useGameSocket } from '../websocket/useGameSocket'
 
@@ -330,6 +336,19 @@ const DRIVER_LABELS: Record<string, string> = {
   random: 'Случайный',
 }
 
+const VEHICLE_TYPE_LABELS: Record<string, string> = {
+  hatchback: 'Хэтчбек',
+  jeep: 'Джип',
+  pickup: 'Пикап',
+  motorcycle: 'Мотоцикл',
+  marshrutka: 'Маршрутка',
+  cargo_truck: 'Грузовик',
+  trolleybus: 'Троллейбус',
+  ambulance: 'Скорая помощь',
+  police: 'Полиция',
+  fire_truck: 'Пожарная машина',
+}
+
 function VehicleMarkers({ vehicles }: { vehicles: Vehicle[] }) {
   const [now, setNow] = useState(() => Date.now())
 
@@ -342,14 +361,15 @@ function VehicleMarkers({ vehicles }: { vehicles: Vehicle[] }) {
     <>
       {vehicles.map((vehicle) => {
         const position = interpolateVehiclePosition(vehicle, now)
+        const typeLabel = VEHICLE_TYPE_LABELS[vehicle.vehicle_type] ?? vehicle.vehicle_type
         return (
           <Marker
             key={vehicle.id}
             position={[position.latitude, position.longitude]}
-            icon={vehicleIcon}
+            icon={vehicleIconForType(vehicle.vehicle_type, vehicle.heading)}
           >
             <Popup>
-              Автомобиль ({DRIVER_LABELS[vehicle.driver_type] ?? vehicle.driver_type})
+              {typeLabel} ({DRIVER_LABELS[vehicle.driver_type] ?? vehicle.driver_type})
               <br />
               Топливо: {FUEL_LABELS[vehicle.fuel_type as FuelType] ?? vehicle.fuel_type}
               <br />

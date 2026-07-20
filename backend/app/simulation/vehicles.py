@@ -21,12 +21,22 @@ from app.db.models.game_room import GameRoom, GameStatus
 from app.db.models.game_station import STATION_STATUS_ACTIVE, GameStation
 from app.db.models.station_fuel import FuelType, StationFuel
 from app.db.models.station_upgrade import UpgradeType
-from app.db.models.vehicle import DriverType, Vehicle, VehicleStatus
-from app.schemas.game_settings import EventModifiers, GameSettings
+from app.db.models.vehicle import DriverType, Vehicle, VehicleStatus, VehicleType
+from app.schemas.game_settings import EventModifiers, GameSettings, VehicleTypeSettings
 from app.services import event_service, routing_service
 from app.simulation.station_upgrades import get_active_upgrade_levels
 
 _CENTS = Decimal("0.01")
+
+
+def _choose_vehicle_type(
+    settings: GameSettings, rng: random.Random
+) -> tuple[VehicleType, VehicleTypeSettings]:
+    type_names = list(settings.vehicle_types.keys())
+    weights = [settings.vehicle_types[name].spawn_weight for name in type_names]
+    chosen_name = rng.choices(type_names, weights=weights, k=1)[0]
+    return VehicleType(chosen_name), settings.vehicle_types[chosen_name]
+
 
 _ATTRACTIVENESS_UPGRADE_TYPES = (
     UpgradeType.PUMPS,
@@ -378,7 +388,10 @@ async def spawn_vehicles_for_game(
 
         driver_type = rng.choice(list(DriverType))
         profile = sample_driver_profile(driver_type, rng)
-        fuel_type = rng.choice(list(FuelType))
+        vehicle_type, type_settings = _choose_vehicle_type(settings, rng)
+        fuel_type = (
+            rng.choice(type_settings.fuel_types) if type_settings.fuel_types else FuelType.AI92
+        )
 
         tank_capacity = settings.vehicle_tank_capacity_liters * Decimal(str(rng.uniform(0.8, 1.2)))
         fuel_ratio = rng.uniform(0.05, 0.95)
@@ -392,7 +405,7 @@ async def spawn_vehicles_for_game(
         ).quantize(_CENTS, rounding=ROUND_HALF_UP)
 
         station: GameStation | None = None
-        if fuel_ratio < effective_refuel_threshold:
+        if type_settings.refuels and fuel_ratio < effective_refuel_threshold:
             station = _select_station_for_vehicle(
                 stations=stations,
                 fuel_type=fuel_type,
@@ -429,6 +442,7 @@ async def spawn_vehicles_for_game(
         vehicle = Vehicle(
             game_id=game_id,
             driver_type=driver_type,
+            vehicle_type=vehicle_type,
             fuel_type=fuel_type,
             home_latitude=home_node.latitude,
             home_longitude=home_node.longitude,
@@ -473,6 +487,34 @@ def _interpolate_position(
 
     last = points[-1]
     return last["latitude"], last["longitude"]
+
+
+def _bearing_degrees(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
+    """Compass bearing (0=north, 90=east) from point 1 to point 2, for marker rotation."""
+    lat1_rad, lat2_rad = math.radians(lat1), math.radians(lat2)
+    delta_lon_rad = math.radians(lon2 - lon1)
+    x = math.sin(delta_lon_rad) * math.cos(lat2_rad)
+    y = math.cos(lat1_rad) * math.sin(lat2_rad) - math.sin(lat1_rad) * math.cos(
+        lat2_rad
+    ) * math.cos(delta_lon_rad)
+    return math.degrees(math.atan2(x, y)) % 360
+
+
+def _heading_along_route(points: list[dict[str, Any]], elapsed_minutes: float) -> float:
+    for previous, current in zip(points, points[1:], strict=False):
+        if elapsed_minutes <= current["cumulative_minutes"]:
+            return _bearing_degrees(
+                previous["latitude"],
+                previous["longitude"],
+                current["latitude"],
+                current["longitude"],
+            )
+    if len(points) >= 2:
+        second_last, last = points[-2], points[-1]
+        return _bearing_degrees(
+            second_last["latitude"], second_last["longitude"], last["latitude"], last["longitude"]
+        )
+    return 0.0
 
 
 @dataclass(frozen=True)
@@ -725,6 +767,7 @@ async def update_vehicles_for_game(
         vehicle.current_latitude = lat
         vehicle.current_longitude = lon
         vehicle.route_progress = progress
+        vehicle.heading = _heading_along_route(points, elapsed_minutes)
 
         if progress >= 1.0:
             arrived_vehicle_ids.append(vehicle.id)

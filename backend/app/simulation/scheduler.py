@@ -186,8 +186,10 @@ async def _broadcast_vehicle_tick(
                     "vehicles": [
                         {
                             "vehicle_id": str(vehicle.id),
+                            "vehicle_type": vehicle.vehicle_type.value,
                             "latitude": vehicle.current_latitude,
                             "longitude": vehicle.current_longitude,
+                            "heading": vehicle.heading,
                             "progress": vehicle.route_progress,
                             "status": vehicle.status.value,
                         }

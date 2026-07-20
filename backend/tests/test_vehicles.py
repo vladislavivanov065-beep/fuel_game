@@ -265,6 +265,88 @@ async def test_spawn_vehicles_for_game_caps_at_max_active_vehicles(
     assert len(rows) <= 3
 
 
+async def _bias_vehicle_type_weights(game_id: uuid.UUID, only_type: str) -> None:
+    """Zero out every vehicle_types spawn_weight except ``only_type`` so spawn is deterministic."""
+    async with async_session_factory() as db:
+        game = await db.get(GameRoom, game_id)
+        settings_json = dict(game.settings_json)
+        vehicle_types = {
+            name: dict(value) for name, value in settings_json["vehicle_types"].items()
+        }
+        for name, value in vehicle_types.items():
+            value["spawn_weight"] = 1.0 if name == only_type else 0.0
+        settings_json["vehicle_types"] = vehicle_types
+        game.settings_json = settings_json
+        await db.commit()
+
+
+async def test_spawn_vehicles_for_game_distributes_by_vehicle_type_weight(
+    db_session: AsyncSession,
+) -> None:
+    game_id, _station_id = await _setup_running_game_with_owned_station("VehicleTypeWeight")
+    await _bias_vehicle_type_weights(game_id, "motorcycle")
+
+    async with async_session_factory() as db:
+        game = await db.get(GameRoom, game_id)
+        settings_json = dict(game.settings_json)
+        settings_json["max_active_vehicles"] = 50
+        game.settings_json = settings_json
+        await db.commit()
+
+    vehicles_module._last_spawn_check[game_id] = datetime.now(UTC) - timedelta(minutes=5)
+    async with async_session_factory() as db:
+        spawned = await spawn_vehicles_for_game(db, game_id, rng=random.Random(3))
+    assert len(spawned) > 0
+
+    async with async_session_factory() as db:
+        rows = (await db.execute(select(Vehicle))).scalars().all()
+    assert rows
+    assert all(vehicle.vehicle_type.value == "motorcycle" for vehicle in rows)
+
+
+async def test_spawn_vehicles_for_game_cargo_truck_only_buys_diesel(
+    db_session: AsyncSession,
+) -> None:
+    game_id, _station_id = await _setup_running_game_with_owned_station("VehicleCargoTruck")
+    await _bias_vehicle_type_weights(game_id, "cargo_truck")
+
+    vehicles_module._last_spawn_check[game_id] = datetime.now(UTC) - timedelta(minutes=5)
+    async with async_session_factory() as db:
+        spawned = await spawn_vehicles_for_game(db, game_id, rng=random.Random(4))
+    assert len(spawned) > 0
+
+    async with async_session_factory() as db:
+        rows = (await db.execute(select(Vehicle))).scalars().all()
+    assert rows
+    assert all(vehicle.vehicle_type.value == "cargo_truck" for vehicle in rows)
+    assert all(vehicle.fuel_type == FuelType.DIESEL for vehicle in rows)
+
+
+async def test_spawn_vehicles_for_game_trolleybus_never_selects_a_station(
+    db_session: AsyncSession,
+) -> None:
+    game_id, _station_id = await _setup_running_game_with_owned_station("VehicleTrolleybus")
+    await _bias_vehicle_type_weights(game_id, "trolleybus")
+
+    async with async_session_factory() as db:
+        game = await db.get(GameRoom, game_id)
+        settings_json = dict(game.settings_json)
+        settings_json["vehicle_refuel_threshold_ratio"] = 1.0
+        game.settings_json = settings_json
+        await db.commit()
+
+    vehicles_module._last_spawn_check[game_id] = datetime.now(UTC) - timedelta(minutes=5)
+    async with async_session_factory() as db:
+        spawned = await spawn_vehicles_for_game(db, game_id, rng=random.Random(5))
+    assert len(spawned) > 0
+
+    async with async_session_factory() as db:
+        rows = (await db.execute(select(Vehicle))).scalars().all()
+    assert rows
+    assert all(vehicle.vehicle_type.value == "trolleybus" for vehicle in rows)
+    assert all(vehicle.chosen_station_id is None for vehicle in rows)
+
+
 async def _insert_vehicle(
     db: AsyncSession,
     *,
