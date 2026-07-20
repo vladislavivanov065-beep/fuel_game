@@ -2,12 +2,16 @@
 
 Браузерная многопользовательская экономическая стратегия. Технические детали: [TECHNICAL_SPEC.md](./TECHNICAL_SPEC.md).
 
-Текущий этап разработки: **Этап 0 — базовая инфраструктура** (FastAPI health-check, React health-check страница, Docker Compose).
+Текущий этап разработки: **Этап 13 — деплой на Railway**.
 
 ## Стек
 
 - Backend: Python 3.12, FastAPI, SQLAlchemy 2 (async), Alembic, PostgreSQL
 - Frontend: React, TypeScript, Vite, TanStack Query, Zustand
+
+Redis и Docker в проекте не используются: сессии авторизации хранятся в PostgreSQL
+(таблица `sessions`), а фоновый планировщик тика игры работает как asyncio-задача
+внутри того же процесса FastAPI (см. `backend/app/simulation/scheduler.py`).
 
 ## Локальный запуск
 
@@ -32,8 +36,11 @@ Backend поднимется на `http://localhost:8000`, health-check: `GET /a
 
 Три сид-команды идемпотентны — их безопасно перезапускать. Их также можно
 выполнить одной командой через `python -m scripts.release` (сначала
-`alembic upgrade head`, затем все три скрипта по очереди) — это же используется
-как pre-deploy команда на Railway (см. `backend/railway.json`).
+`alembic upgrade head`, затем все три скрипта по очереди). На Railway это же
+происходит автоматически при каждом запуске — миграции и сиды выполняются
+внутри `lifespan` самого FastAPI-приложения (`app/core/release.py`), а не как
+отдельная pre-deploy команда, поэтому не зависят от того, как платформа
+резолвит путь до отдельного интерпретатора/venv.
 
 ### Frontend
 
@@ -70,3 +77,38 @@ npm run build
 ## Переменные окружения
 
 См. `backend/.env.example` и `frontend/.env.example`.
+
+## Деплой на Railway
+
+Backend и frontend — два отдельных Railway-сервиса в одном монорепозитории, плюс
+управляемый PostgreSQL (Redis не нужен). Отдельного worker-сервиса нет: фоновый
+тик игры выполняется как asyncio-задача внутри процесса backend-сервиса.
+
+Для каждого сервиса в настройках Railway нужно указать:
+
+- **Root Directory**: `backend` (или `frontend`);
+- **Config File Path**: `railway.json` относительно Root Directory — используется
+  builder `RAILPACK` и `startCommand`/`healthcheckPath` из `backend/railway.json` /
+  `frontend/railway.json`.
+
+Переменные окружения:
+
+- backend: `DATABASE_URL` (Railway подставляет автоматически при подключении
+  Postgres-плагина; префикс `postgres://`/`postgresql://` без драйвера
+  нормализуется в `postgresql+asyncpg://` в `app/core/config.py`), `CORS_ORIGINS`
+  (публичный URL frontend-сервиса), `SESSION_COOKIE_SECURE=true` (backend и
+  frontend на разных поддоменах Railway — нужен `SameSite=None`, а он требует
+  `Secure=true`), `LOG_LEVEL`.
+- frontend: `VITE_API_URL` (публичный URL backend-сервиса). `vite.config.ts`
+  уже разрешает `preview.allowedHosts: ['.up.railway.app']` — Railway выдаёт
+  новый случайный поддомен на каждый деплой.
+
+При каждом старте backend-процесса (в `lifespan`, до открытия порта) автоматически
+выполняются `alembic upgrade head` и все сид-скрипты (`app/core/release.py`) —
+отдельная pre-deploy команда не требуется и не настроена. Данные станций, НПЗ и
+дорожного графа хранятся в PostgreSQL и переживают редеплой без volume; исходные
+GeoJSON-файлы для сидов лежат в репозитории (`backend/data/`).
+
+Health-check: `GET /api/health` (проверяет доступность БД) — указан как
+`healthcheckPath` в `backend/railway.json`, Railway ждёт его перед переключением
+трафика на новый деплой.

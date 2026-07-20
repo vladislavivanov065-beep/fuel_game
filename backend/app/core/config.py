@@ -11,6 +11,7 @@ class Settings(BaseSettings):
 
     app_name: str = "Gas Station Wars"
     environment: str = "development"
+    log_level: str = "INFO"
 
     database_url: str = "postgresql+asyncpg://gaswars:gaswars@localhost:5432/gaswars"
 
