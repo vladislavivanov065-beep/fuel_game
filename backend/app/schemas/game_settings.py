@@ -352,6 +352,15 @@ class GameSettings(BaseModel):
         default_factory=lambda: dict(_DEFAULT_VEHICLE_TYPES)
     )
 
+    # Этап 14.5 — ДТП: an independent risk system (not GameEvent). Probability
+    # per occupied edge is base * occupancy_ratio (0..1), so a jammed edge is
+    # far riskier than a nearly-empty one; see simulation/accidents.py.
+    accident_base_probability_per_minute: float = Field(default=0.02, ge=0)
+    accident_major_probability: float = Field(default=0.25, ge=0, le=1)
+    accident_min_duration_seconds: float = Field(default=60.0, gt=0)
+    accident_max_duration_seconds: float = Field(default=240.0, gt=0)
+    accident_minor_traffic_penalty: float = Field(default=2.5, gt=1.0)
+
     station_upgrades: dict[str, StationUpgradeTypeSettings] = Field(
         default_factory=lambda: dict(_DEFAULT_STATION_UPGRADES)
     )

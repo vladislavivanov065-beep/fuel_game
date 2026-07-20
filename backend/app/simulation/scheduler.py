@@ -12,6 +12,7 @@ from app.db.models.vehicle import Vehicle
 from app.db.session import async_session_factory
 from app.schemas.game_settings import GameSettings
 from app.simulation import (
+    accidents,
     economy,
     events,
     game_lifecycle,
@@ -233,6 +234,46 @@ async def _broadcast_upgrade_tick(
         )
 
 
+async def _update_accidents(game_id: uuid.UUID) -> None:
+    async with async_session_factory() as db:
+        try:
+            started = await accidents.roll_accidents_for_game(
+                db, game_id, dt_seconds=_POLL_INTERVAL_SECONDS
+            )
+        except Exception:
+            logger.exception("Accident roll failed for game %s", game_id)
+            started = []
+
+    for started_accident in started:
+        await connection_manager.broadcast(
+            game_id,
+            "accident.started",
+            {
+                "accident_id": str(started_accident.accident_id),
+                "road_edge_id": str(started_accident.road_edge_id),
+                "severity": started_accident.severity.value,
+                "ends_at": started_accident.ends_at.isoformat(),
+            },
+        )
+
+    async with async_session_factory() as db:
+        try:
+            ended = await accidents.expire_due_accidents_for_game(db, game_id)
+        except Exception:
+            logger.exception("Accident expiry failed for game %s", game_id)
+            return
+
+    for ended_accident in ended:
+        await connection_manager.broadcast(
+            game_id,
+            "accident.ended",
+            {
+                "accident_id": str(ended_accident.accident_id),
+                "road_edge_id": str(ended_accident.road_edge_id),
+            },
+        )
+
+
 async def _update_station_upgrades(game_id: uuid.UUID) -> None:
     async with async_session_factory() as db:
         try:
@@ -350,6 +391,7 @@ async def _run_tick_cycle() -> None:
     for game in games:
         await _update_trucks(game.id, now)
         await _update_vehicles(game.id, now)
+        await _update_accidents(game.id)
         await _update_station_upgrades(game.id)
         await _expire_events(game.id)
         await _expire_trade_offers(game.id)
