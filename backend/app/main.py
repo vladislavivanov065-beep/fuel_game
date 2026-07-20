@@ -14,10 +14,12 @@ from app.api.stations import router as stations_router
 from app.api.trades import router as trades_router
 from app.api.vehicles import router as vehicles_router
 from app.core.config import get_settings
+from app.core.logging import configure_logging
 from app.core.release import run_release_tasks
 from app.simulation import scheduler
 from app.websocket.game_ws import router as game_ws_router
 
+configure_logging()
 settings = get_settings()
 
 
