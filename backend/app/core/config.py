@@ -49,6 +49,8 @@ class Settings(BaseSettings):
     auth_rate_limit_max_attempts: int = 5
     auth_rate_limit_window_seconds: int = 60
 
+    password_reset_ttl_seconds: int = 60 * 15
+
 
 @lru_cache
 def get_settings() -> Settings:

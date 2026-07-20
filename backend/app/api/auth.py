@@ -8,7 +8,14 @@ from app.core.config import get_settings
 from app.core.rate_limit import AuthRateLimiter
 from app.db.models.user import User
 from app.db.session import get_db_session
-from app.schemas.auth import LoginRequest, RegisterRequest, UserResponse
+from app.schemas.auth import (
+    ForgotPasswordRequest,
+    ForgotPasswordResponse,
+    LoginRequest,
+    RegisterRequest,
+    ResetPasswordRequest,
+    UserResponse,
+)
 from app.services import auth_service
 
 settings = get_settings()
@@ -17,6 +24,8 @@ router = APIRouter(prefix="/api/auth", tags=["auth"])
 
 _register_rate_limiter = AuthRateLimiter("register")
 _login_rate_limiter = AuthRateLimiter("login")
+_forgot_password_rate_limiter = AuthRateLimiter("forgot-password")
+_reset_password_rate_limiter = AuthRateLimiter("reset-password")
 
 
 def _set_session_cookie(response: Response, token: str) -> None:
@@ -92,3 +101,42 @@ async def logout(
 @router.get("/me", response_model=UserResponse)
 async def me(user: Annotated[User, Depends(require_current_user)]) -> User:
     return user
+
+
+@router.post(
+    "/forgot-password",
+    response_model=ForgotPasswordResponse,
+    dependencies=[Depends(_forgot_password_rate_limiter)],
+)
+async def forgot_password(
+    data: ForgotPasswordRequest,
+    db: Annotated[AsyncSession, Depends(get_db_session)],
+) -> ForgotPasswordResponse:
+    result = await auth_service.request_password_reset(db, data.email)
+    if result is None:
+        return ForgotPasswordResponse(
+            message="If that email is registered, a reset token was generated."
+        )
+
+    _, token = result
+    return ForgotPasswordResponse(
+        message="If that email is registered, a reset token was generated.",
+        reset_token=token,
+    )
+
+
+@router.post(
+    "/reset-password",
+    status_code=status.HTTP_204_NO_CONTENT,
+    dependencies=[Depends(_reset_password_rate_limiter)],
+)
+async def reset_password(
+    data: ResetPasswordRequest,
+    db: Annotated[AsyncSession, Depends(get_db_session)],
+) -> None:
+    try:
+        await auth_service.reset_password(db, data.token, data.new_password)
+    except auth_service.PasswordResetTokenInvalidError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid or expired reset token"
+        ) from exc

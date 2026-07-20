@@ -6,6 +6,7 @@ from app.db.models.game_event import EventStatus, EventType, GameEvent
 from app.db.models.game_player import GamePlayer
 from app.db.models.game_room import GameRoom, GameStatus
 from app.db.models.game_station import GameStation
+from app.db.models.password_reset_token import PasswordResetToken
 from app.db.models.refinery import Refinery
 from app.db.models.refinery_fuel import RefineryFuel
 from app.db.models.road_accident import AccidentSeverity, RoadAccident
@@ -38,6 +39,7 @@ __all__ = [
     "GameRoom",
     "GameStation",
     "GameStatus",
+    "PasswordResetToken",
     "Refinery",
     "RefineryFuel",
     "RoadAccident",
