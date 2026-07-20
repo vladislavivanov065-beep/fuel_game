@@ -3,6 +3,10 @@ import { type FormEvent, useState } from 'react'
 import { Link, useNavigate, useParams } from 'react-router-dom'
 import { ApiError } from '../api/client'
 import { getGame, leaveGame, setNetwork, setReady, startGame } from '../api/games'
+import { Badge } from '../components/ui/Badge'
+import { Button } from '../components/ui/Button'
+import { Card } from '../components/ui/Card'
+import { StatTile } from '../components/ui/StatTile'
 import { useAuthStore } from '../stores/authStore'
 import { useGameSocket } from '../websocket/useGameSocket'
 
@@ -88,54 +92,82 @@ export function LobbyPage() {
   }
 
   if (isLoading) {
-    return (
-      <main>
-        <p>Loading lobby...</p>
-      </main>
-    )
+    return <Card>Загрузка лобби...</Card>
   }
 
   if (isError || !game) {
     return (
-      <main>
-        <p role="alert">Could not load this game.</p>
-      </main>
+      <Card>
+        <p role="alert" style={{ color: 'var(--danger)' }}>
+          Не удалось загрузить игру.
+        </p>
+      </Card>
     )
   }
 
   return (
-    <main>
-      <h1>{game.name}</h1>
-      <p>
-        Status: {game.status} | Invite code: <code>{game.invite_code}</code>
-      </p>
-      {error && <p role="alert">{error}</p>}
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+      <Card>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+          <h2>{game.name}</h2>
+          <span style={{ color: 'var(--text)' }}>
+            {game.status} | Код: <code>{game.invite_code}</code>
+          </span>
+        </div>
+        {error && (
+          <p role="alert" style={{ color: 'var(--danger)' }}>
+            {error}
+          </p>
+        )}
+        {me && (
+          <div style={{ display: 'flex', gap: 12, marginTop: 12 }}>
+            <StatTile
+              label="Баланс"
+              value={`${Number(me.balance).toLocaleString('ru-RU')} ₽`}
+            />
+            <StatTile
+              label="Net worth"
+              value={`${Number(me.net_worth).toLocaleString('ru-RU')} ₽`}
+            />
+          </div>
+        )}
+      </Card>
 
-      <h2>Players</h2>
-      <ul>
-        {game.players.map((player) => (
-          <li key={player.id}>
-            {player.display_name}
-            {player.is_admin ? ' (creator)' : ''} — {player.is_ready ? 'ready' : 'not ready'} —
-            balance: {player.balance}
-            {player.network_name && (
-              <>
-                {' — network: '}
-                <span style={{ color: player.network_color ?? undefined }}>
-                  {player.network_name}
-                </span>
-              </>
-            )}
-          </li>
-        ))}
-      </ul>
+      <Card>
+        <h2>Игроки</h2>
+        <ul style={{ listStyle: 'none', margin: 0, padding: 0 }}>
+          {game.players.map((player) => (
+            <li
+              key={player.id}
+              style={{ padding: '8px 0', borderTop: '1px solid var(--border)' }}
+            >
+              <span style={{ color: 'var(--text-h)' }}>{player.display_name}</span>
+              {player.is_admin && <Badge>Admin</Badge>}
+              {' — '}
+              {player.is_ready ? 'готов' : 'не готов'} —{' '}
+              {Number(player.balance).toLocaleString('ru-RU')} ₽
+              {player.network_name && (
+                <>
+                  {' — сеть: '}
+                  <span style={{ color: player.network_color ?? undefined }}>
+                    {player.network_name}
+                  </span>
+                </>
+              )}
+            </li>
+          ))}
+        </ul>
+      </Card>
 
       {me && (
-        <>
-          <h2>Your network</h2>
-          <form onSubmit={(e) => void handleSetNetwork(e)}>
-            <label>
-              Name
+        <Card>
+          <h2>Ваша сеть</h2>
+          <form
+            onSubmit={(e) => void handleSetNetwork(e)}
+            style={{ display: 'flex', gap: 12, alignItems: 'flex-end', flexWrap: 'wrap' }}
+          >
+            <label style={{ flex: 1, minWidth: 160 }}>
+              Название
               <input
                 type="text"
                 value={networkName}
@@ -146,43 +178,49 @@ export function LobbyPage() {
               />
             </label>
             <label>
-              Color
+              Цвет
               <input
                 type="color"
                 value={networkColor}
                 onChange={(e) => setNetworkColor(e.target.value)}
               />
             </label>
-            <button type="submit" disabled={busy}>
-              Save network
-            </button>
+            <Button type="submit" variant="secondary" disabled={busy}>
+              Сохранить
+            </Button>
           </form>
-        </>
+        </Card>
       )}
 
-      {game.status === 'lobby' && me && (
-        <button type="button" onClick={() => void handleToggleReady()} disabled={busy}>
-          {me.is_ready ? 'Mark not ready' : 'Mark ready'}
-        </button>
-      )}
+      <Card>
+        <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap' }}>
+          {game.status === 'lobby' && me && (
+            <Button type="button" onClick={() => void handleToggleReady()} disabled={busy}>
+              {me.is_ready ? 'Отметить не готов' : 'Отметить готов'}
+            </Button>
+          )}
 
-      {game.status === 'lobby' && me?.is_admin && (
-        <button type="button" onClick={() => void handleStart()} disabled={busy}>
-          Start game
-        </button>
-      )}
+          {game.status === 'lobby' && me?.is_admin && (
+            <Button type="button" onClick={() => void handleStart()} disabled={busy}>
+              Начать игру
+            </Button>
+          )}
 
-      {game.status === 'running' && (
-        <p>
-          <Link to={`/games/${gameId}/map`}>Open game map</Link>
-        </p>
-      )}
+          {game.status === 'running' && (
+            <Link to={`/games/${gameId}/map`}>
+              <Button type="button" variant="primary">
+                Открыть карту игры
+              </Button>
+            </Link>
+          )}
 
-      {me && !me.is_admin && (
-        <button type="button" onClick={() => void handleLeave()} disabled={busy}>
-          Leave game
-        </button>
-      )}
-    </main>
+          {me && !me.is_admin && (
+            <Button type="button" variant="danger" onClick={() => void handleLeave()} disabled={busy}>
+              Покинуть игру
+            </Button>
+          )}
+        </div>
+      </Card>
+    </div>
   )
 }

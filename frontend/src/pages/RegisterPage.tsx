@@ -1,5 +1,7 @@
 import { type FormEvent, useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
+import { AuthLayout } from '../components/layout/AuthLayout'
+import { Button } from '../components/ui/Button'
 import { useAuthStore } from '../stores/authStore'
 
 export function RegisterPage() {
@@ -25,11 +27,14 @@ export function RegisterPage() {
   }
 
   return (
-    <main>
-      <h1>Create an account</h1>
-      <form onSubmit={(e) => void handleSubmit(e)}>
+    <AuthLayout>
+      <h1 style={{ fontSize: 24, textAlign: 'center' }}>Регистрация</h1>
+      <form
+        onSubmit={(e) => void handleSubmit(e)}
+        style={{ display: 'flex', flexDirection: 'column', gap: 12 }}
+      >
         <label>
-          Display name
+          Имя
           <input
             type="text"
             value={displayName}
@@ -47,7 +52,7 @@ export function RegisterPage() {
           />
         </label>
         <label>
-          Password
+          Пароль
           <input
             type="password"
             value={password}
@@ -56,14 +61,18 @@ export function RegisterPage() {
             required
           />
         </label>
-        {error && <p role="alert">{error}</p>}
-        <button type="submit" disabled={submitting}>
-          {submitting ? 'Creating account...' : 'Register'}
-        </button>
+        {error && (
+          <p role="alert" style={{ color: 'var(--danger)' }}>
+            {error}
+          </p>
+        )}
+        <Button type="submit" disabled={submitting}>
+          {submitting ? 'Создание аккаунта...' : 'Зарегистрироваться'}
+        </Button>
       </form>
-      <p>
-        Already have an account? <Link to="/login">Sign in</Link>
+      <p style={{ textAlign: 'center', marginTop: 16 }}>
+        Уже есть аккаунт? <Link to="/login">Войти</Link>
       </p>
-    </main>
+    </AuthLayout>
   )
 }
