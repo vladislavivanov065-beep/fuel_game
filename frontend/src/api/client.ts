@@ -1,4 +1,11 @@
-export const API_BASE_URL = import.meta.env.VITE_API_URL ?? 'http://localhost:8000'
+// Strip a trailing slash so a misconfigured VITE_API_URL (e.g. one copied
+// with a trailing "/") doesn't produce a double-slash path like
+// "https://host//api/..." — some proxies (including Railway's edge) 502
+// on that instead of normalizing it.
+export const API_BASE_URL = (import.meta.env.VITE_API_URL ?? 'http://localhost:8000').replace(
+  /\/+$/,
+  '',
+)
 
 export class ApiError extends Error {
   status: number
