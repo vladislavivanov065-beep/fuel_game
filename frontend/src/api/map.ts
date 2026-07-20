@@ -29,6 +29,7 @@ export interface RoadEdge {
   to_node_id: string
   road_type: string
   is_closed: boolean
+  trolleybus_wire: boolean
 }
 
 export interface TrafficLight {

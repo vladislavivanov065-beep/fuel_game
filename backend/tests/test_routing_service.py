@@ -35,6 +35,8 @@ def _two_way_edges(
     distance_km: float,
     max_speed_kmh: float = 60.0,
     is_closed: bool = False,
+    road_type: str = "local",
+    trolleybus_wire: bool = False,
 ) -> list[GraphEdge]:
     return [
         GraphEdge(
@@ -45,6 +47,8 @@ def _two_way_edges(
             max_speed_kmh=max_speed_kmh,
             traffic_coefficient=1.0,
             is_closed=is_closed,
+            road_type=road_type,
+            trolleybus_wire=trolleybus_wire,
         ),
         GraphEdge(
             id=uuid.uuid4(),
@@ -54,6 +58,8 @@ def _two_way_edges(
             max_speed_kmh=max_speed_kmh,
             traffic_coefficient=1.0,
             is_closed=is_closed,
+            road_type=road_type,
+            trolleybus_wire=trolleybus_wire,
         ),
     ]
 
@@ -118,6 +124,30 @@ def test_find_route_detours_around_closed_edge() -> None:
     assert result.distance_km == pytest.approx(16.0)
 
 
+def test_find_route_respects_edge_filter() -> None:
+    """A trolleybus-only filter must force the detour via wire-tagged edges
+    even though the direct path is shorter (Этап 14.4)."""
+    nodes = _nodes()
+    edges = (
+        _two_way_edges(NODE_A, NODE_B, 10.0, road_type="local")
+        + _two_way_edges(NODE_B, NODE_C, 10.0, road_type="local")
+        + _two_way_edges(NODE_A, NODE_D, 8.0, road_type="trunk", trolleybus_wire=True)
+        + _two_way_edges(NODE_D, NODE_C, 8.0, road_type="trunk", trolleybus_wire=True)
+    )
+
+    result = find_route(nodes, edges, NODE_A, NODE_C, edge_filter=lambda edge: edge.trolleybus_wire)
+
+    assert result.distance_km == pytest.approx(16.0)
+
+
+def test_find_route_raises_when_edge_filter_excludes_every_path() -> None:
+    nodes = _nodes()
+    edges = _two_way_edges(NODE_A, NODE_B, 10.0) + _two_way_edges(NODE_B, NODE_C, 10.0)
+
+    with pytest.raises(NoRouteFoundError):
+        find_route(nodes, edges, NODE_A, NODE_C, edge_filter=lambda edge: edge.trolleybus_wire)
+
+
 def test_find_route_exposes_per_segment_breakdown() -> None:
     nodes = _nodes()
     edges = _two_way_edges(NODE_A, NODE_B, 10.0) + _two_way_edges(NODE_B, NODE_C, 5.0)
@@ -161,6 +191,22 @@ def test_build_multi_stop_route_handles_a_waypoint_that_repeats_the_previous_one
     # The repeated waypoint contributes no new point, so its stop index
     # equals the previous stop's index.
     assert route.stop_point_indices[0] == route.stop_point_indices[1]
+
+
+def test_build_multi_stop_route_respects_edge_filter() -> None:
+    nodes = _nodes()
+    edges = (
+        _two_way_edges(NODE_A, NODE_B, 10.0, road_type="local")
+        + _two_way_edges(NODE_B, NODE_C, 10.0, road_type="local")
+        + _two_way_edges(NODE_A, NODE_D, 8.0, road_type="trunk", trolleybus_wire=True)
+        + _two_way_edges(NODE_D, NODE_C, 8.0, road_type="trunk", trolleybus_wire=True)
+    )
+
+    route = build_multi_stop_route(
+        nodes, edges, [NODE_A, NODE_C], edge_filter=lambda edge: edge.trolleybus_wire
+    )
+
+    assert route.total_distance_km == pytest.approx(16.0)
 
 
 def test_build_multi_stop_route_requires_at_least_two_waypoints() -> None:

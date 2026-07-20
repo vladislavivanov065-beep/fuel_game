@@ -152,12 +152,15 @@ async def _seed_road_graph(*point_pairs: tuple[float, float]) -> None:
         for a, b in zip(nodes, nodes[1:], strict=False):
             db.add_all(
                 [
+                    # trolleybus_wire=True so the trolleybus spawn tests below
+                    # have a route to use (Этап 14.4).
                     RoadEdge(
                         from_node_id=a.id,
                         to_node_id=b.id,
                         distance_km=8.0,
                         max_speed_kmh=60.0,
                         road_type="local",
+                        trolleybus_wire=True,
                     ),
                     RoadEdge(
                         from_node_id=b.id,
@@ -165,6 +168,7 @@ async def _seed_road_graph(*point_pairs: tuple[float, float]) -> None:
                         distance_km=8.0,
                         max_speed_kmh=60.0,
                         road_type="local",
+                        trolleybus_wire=True,
                     ),
                 ]
             )
@@ -345,6 +349,72 @@ async def test_spawn_vehicles_for_game_trolleybus_never_selects_a_station(
     assert rows
     assert all(vehicle.vehicle_type.value == "trolleybus" for vehicle in rows)
     assert all(vehicle.chosen_station_id is None for vehicle in rows)
+
+
+def test_road_type_edge_filter_forces_trolleybus_onto_wire_detour() -> None:
+    """A trolleybus's edge filter must reject the shorter direct path (no
+    wire) and force ``build_multi_stop_route`` onto the longer wire-tagged
+    detour (Этап 14.4)."""
+    node_a = routing_service.GraphNode(id=uuid.uuid4(), latitude=56.0, longitude=47.0)
+    node_b = routing_service.GraphNode(id=uuid.uuid4(), latitude=56.01, longitude=47.0)
+    node_c = routing_service.GraphNode(id=uuid.uuid4(), latitude=56.02, longitude=47.0)
+    node_d = routing_service.GraphNode(id=uuid.uuid4(), latitude=56.01, longitude=47.05)
+    nodes = [node_a, node_b, node_c, node_d]
+
+    def _pair(
+        a: routing_service.GraphNode,
+        b: routing_service.GraphNode,
+        distance_km: float,
+        road_type: str,
+        trolleybus_wire: bool,
+    ) -> list[routing_service.GraphEdge]:
+        return [
+            routing_service.GraphEdge(
+                id=uuid.uuid4(),
+                from_node_id=a.id,
+                to_node_id=b.id,
+                distance_km=distance_km,
+                max_speed_kmh=60.0,
+                traffic_coefficient=1.0,
+                is_closed=False,
+                road_type=road_type,
+                trolleybus_wire=trolleybus_wire,
+            ),
+            routing_service.GraphEdge(
+                id=uuid.uuid4(),
+                from_node_id=b.id,
+                to_node_id=a.id,
+                distance_km=distance_km,
+                max_speed_kmh=60.0,
+                traffic_coefficient=1.0,
+                is_closed=False,
+                road_type=road_type,
+                trolleybus_wire=trolleybus_wire,
+            ),
+        ]
+
+    # Direct path A-B-C (10 km, no wire) is shorter than the detour
+    # A-D-C (16 km, wire) — without the filter the router would prefer it.
+    edges = (
+        _pair(node_a, node_b, 5.0, "local", False)
+        + _pair(node_b, node_c, 5.0, "local", False)
+        + _pair(node_a, node_d, 8.0, "trunk", True)
+        + _pair(node_d, node_c, 8.0, "trunk", True)
+    )
+
+    settings = GameSettings()
+    edge_filter = vehicles_module._road_type_edge_filter(settings.vehicle_types["trolleybus"])
+    assert edge_filter is not None
+
+    route_json = vehicles_module._build_vehicle_route(
+        nodes, edges, node_a, node_c, None, edge_filter=edge_filter
+    )
+
+    assert route_json["points"][-1]["cumulative_km"] == 16.0
+    wire_edge_ids = {str(edge.id) for edge in edges if edge.trolleybus_wire}
+    used_edge_ids = {point["edge_id"] for point in route_json["points"] if point["edge_id"]}
+    assert used_edge_ids
+    assert used_edge_ids <= wire_edge_ids
 
 
 async def _insert_vehicle(

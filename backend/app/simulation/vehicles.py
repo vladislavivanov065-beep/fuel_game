@@ -1,6 +1,7 @@
 import math
 import random
 import uuid
+from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from decimal import ROUND_HALF_UP, Decimal
@@ -167,19 +168,40 @@ def choose_station_index(scores: list[float], rng: random.Random) -> int:
     return len(scores) - 1
 
 
+def _road_type_edge_filter(
+    type_settings: VehicleTypeSettings,
+) -> Callable[[routing_service.GraphEdge], bool] | None:
+    """Этап 14.4: restrict routing to edges this vehicle type may legally use.
+
+    A trolleybus may only travel on ``trolleybus_wire`` edges; a cargo truck
+    may not enter certain ``road_type`` values (e.g. residential streets).
+    Returns None (no restriction) for ordinary vehicle types.
+    """
+    if type_settings.requires_trolleybus_wire:
+        return lambda edge: edge.trolleybus_wire
+    if type_settings.excluded_road_types:
+        excluded = frozenset(type_settings.excluded_road_types)
+        return lambda edge: edge.road_type not in excluded
+    return None
+
+
 def _build_vehicle_route(
     nodes: list[routing_service.GraphNode],
     edges: list[routing_service.GraphEdge],
     home_node: routing_service.GraphNode,
     destination_node: routing_service.GraphNode,
     station_node: routing_service.GraphNode | None,
+    *,
+    edge_filter: Callable[[routing_service.GraphEdge], bool] | None = None,
 ) -> dict[str, Any]:
     waypoint_node_ids = [home_node.id]
     if station_node is not None:
         waypoint_node_ids.append(station_node.id)
     waypoint_node_ids.append(destination_node.id)
 
-    route = routing_service.build_multi_stop_route(nodes, edges, waypoint_node_ids)
+    route = routing_service.build_multi_stop_route(
+        nodes, edges, waypoint_node_ids, edge_filter=edge_filter
+    )
     positions = list(range(len(route.stop_point_indices)))
     return routing_service.serialize_multi_stop_route(route, positions)
 
@@ -430,15 +452,18 @@ async def spawn_vehicles_for_game(
                 nodes, station.station_template.latitude, station.station_template.longitude
             )
 
+        edge_filter = _road_type_edge_filter(type_settings)
         try:
             route_json = _build_vehicle_route(
-                nodes, edges, home_node, destination_node, station_node
+                nodes, edges, home_node, destination_node, station_node, edge_filter=edge_filter
             )
         except routing_service.NoRouteFoundError:
             if station_node is None:
                 continue
             try:
-                route_json = _build_vehicle_route(nodes, edges, home_node, destination_node, None)
+                route_json = _build_vehicle_route(
+                    nodes, edges, home_node, destination_node, None, edge_filter=edge_filter
+                )
                 station = None
             except routing_service.NoRouteFoundError:
                 continue

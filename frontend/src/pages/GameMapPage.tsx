@@ -322,8 +322,8 @@ function RoadNetworkLayer({ mapData }: { mapData: MapData | undefined }) {
               [to.latitude, to.longitude],
             ]}
             pathOptions={{
-              color: edge.is_closed ? '#c62828' : '#9e9e9e',
-              weight: edge.is_closed ? 3 : 1.5,
+              color: edge.is_closed ? '#c62828' : edge.trolleybus_wire ? '#00897b' : '#9e9e9e',
+              weight: edge.is_closed ? 3 : edge.trolleybus_wire ? 2 : 1.5,
               dashArray: edge.is_closed ? '4 4' : undefined,
               opacity: 0.6,
             }}

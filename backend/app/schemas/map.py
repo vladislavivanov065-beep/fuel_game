@@ -41,6 +41,7 @@ class RoadEdgeResponse(BaseModel):
     to_node_id: uuid.UUID
     road_type: str
     is_closed: bool
+    trolleybus_wire: bool
 
 
 class TrafficLightResponse(BaseModel):

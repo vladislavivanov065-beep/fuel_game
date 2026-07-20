@@ -21,6 +21,11 @@ DEFAULT_LIGHT_RED_SECONDS = 20.0
 DEFAULT_LIGHT_YELLOW_SECONDS = 3.0
 DEFAULT_LIGHT_GREEN_SECONDS = 25.0
 
+# Синтетическая сеть троллейбусных линий (Этап 14.4): нет реальных данных о
+# линиях, поэтому помечаем trolleybus_wire=true на дорогах этих типов —
+# трамвайно-троллейбусные линии в реальности идут вдоль главных улиц.
+TROLLEYBUS_WIRE_ROAD_TYPES = frozenset({"trunk", "primary"})
+
 
 @dataclass(frozen=True)
 class StationFeature:
@@ -178,6 +183,7 @@ async def build_road_graph(
             node_a = node_by_coordinate[key_a]
             node_b = node_by_coordinate[key_b]
             distance_km = haversine_km(lat_a, lon_a, lat_b, lon_b)
+            trolleybus_wire = feature.road_type in TROLLEYBUS_WIRE_ROAD_TYPES
 
             db.add(
                 RoadEdge(
@@ -187,6 +193,7 @@ async def build_road_graph(
                     max_speed_kmh=feature.max_speed_kmh,
                     road_type=feature.road_type,
                     is_one_way=feature.is_one_way,
+                    trolleybus_wire=trolleybus_wire,
                 )
             )
             edge_count += 1
@@ -199,6 +206,7 @@ async def build_road_graph(
                         max_speed_kmh=feature.max_speed_kmh,
                         road_type=feature.road_type,
                         is_one_way=feature.is_one_way,
+                        trolleybus_wire=trolleybus_wire,
                     )
                 )
                 edge_count += 1
