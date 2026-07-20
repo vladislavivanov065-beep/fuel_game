@@ -194,6 +194,60 @@ async def test_trigger_road_works_closes_paired_edges(db_session: AsyncSession) 
         assert all(edge.is_closed for edge in edges)
 
 
+async def test_trigger_police_checkpoint_closes_all_edges_in_region_only(
+    db_session: AsyncSession,
+) -> None:
+    """Этап 14.6: unlike road_works (one segment), police_checkpoint closes
+    every edge within the event's region — but must leave edges far outside
+    the region (well beyond event_region_radius_km) untouched."""
+    game_id, _station_id, owner_id = await _setup_owned_station("EvtPoliceCheckpoint")
+
+    async with async_session_factory() as db:
+        # The owned station (and thus the picked region's center) is at
+        # (56.0, 47.0); these two nodes are a few km apart, well inside the
+        # default 15km event_region_radius_km.
+        near_a = RoadNode(latitude=56.0, longitude=47.0)
+        near_b = RoadNode(latitude=56.02, longitude=47.02)
+        # 4 degrees of latitude away (~440km) is far outside any region radius.
+        far_a = RoadNode(latitude=60.0, longitude=47.0)
+        far_b = RoadNode(latitude=60.02, longitude=47.02)
+        db.add_all([near_a, near_b, far_a, far_b])
+        await db.flush()
+        near_edge = RoadEdge(
+            from_node_id=near_a.id,
+            to_node_id=near_b.id,
+            distance_km=2.0,
+            max_speed_kmh=60.0,
+            road_type="local",
+        )
+        far_edge = RoadEdge(
+            from_node_id=far_a.id,
+            to_node_id=far_b.id,
+            distance_km=2.0,
+            max_speed_kmh=60.0,
+            road_type="local",
+        )
+        db.add_all([near_edge, far_edge])
+        await db.commit()
+        near_edge_id = near_edge.id
+        far_edge_id = far_edge.id
+
+    async with async_session_factory() as db:
+        event = await trigger_event(db, game_id, owner_id, EventType.POLICE_CHECKPOINT)
+
+    assert event.region_json is not None
+    assert "closed_edge_ids" in event.modifiers_json
+    closed_ids = set(event.modifiers_json["closed_edge_ids"])
+    assert str(near_edge_id) in closed_ids
+    assert str(far_edge_id) not in closed_ids
+
+    async with async_session_factory() as db:
+        near_after = await db.get(RoadEdge, near_edge_id)
+        far_after = await db.get(RoadEdge, far_edge_id)
+    assert near_after is not None and near_after.is_closed is True
+    assert far_after is not None and far_after.is_closed is False
+
+
 async def test_trigger_regulatory_inspection_fines_station_without_upgrades(
     db_session: AsyncSession,
 ) -> None:

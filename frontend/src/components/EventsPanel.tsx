@@ -14,6 +14,7 @@ const EVENT_LABELS: Record<EventType, string> = {
   tourist_season: 'Туристический сезон',
   regulatory_inspection: 'Проверка контролирующих органов',
   refinery_breakdown: 'Поломка на НПЗ',
+  police_checkpoint: 'Перекрытие ГАИ',
 }
 
 export function EventsPanel({ gameId, isAdmin }: { gameId: string; isAdmin: boolean }) {

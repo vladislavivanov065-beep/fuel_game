@@ -208,6 +208,11 @@ class EventDefinition(BaseModel):
     runtime modifiers it applies while active, and any one-time effects
     triggered when it starts (road closure, station fines, refinery stock
     loss) — TECHNICAL_SPEC.md section 22/23.
+
+    ``close_random_edge`` (road_works) and ``close_region_edges``
+    (police_checkpoint, Этап 14.6) share the same underlying closure
+    mechanism (``RoadEdge.is_closed`` + ``modifiers_json["closed_edge_ids"]``)
+    but differ in scope: one closed segment vs. every edge in a region.
     """
 
     duration_seconds: int = Field(gt=0)
@@ -215,6 +220,7 @@ class EventDefinition(BaseModel):
     modifiers: EventModifiers = Field(default_factory=EventModifiers)
     regional: bool = False
     close_random_edge: bool = False
+    close_region_edges: bool = False
     inspect_station_count: int = Field(default=0, ge=0)
     fine_amount: Decimal = Field(default=Decimal("0"), ge=0)
     stock_loss_ratio: float = Field(default=0.0, ge=0, le=1)
@@ -279,6 +285,12 @@ _DEFAULT_EVENT_DEFINITIONS: dict[str, EventDefinition] = {
         probability_weight=0.4,
         modifiers=EventModifiers(refinery_price_multiplier=1.4),
         stock_loss_ratio=0.3,
+    ),
+    "police_checkpoint": EventDefinition(
+        duration_seconds=180,
+        probability_weight=0.4,
+        regional=True,
+        close_region_edges=True,
     ),
 }
 

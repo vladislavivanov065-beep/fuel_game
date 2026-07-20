@@ -606,6 +606,9 @@ export function GameMapPage() {
       void queryClient.invalidateQueries({ queryKey: ['gameStations', gameId] })
       void queryClient.invalidateQueries({ queryKey: ['game', gameId] })
       void queryClient.invalidateQueries({ queryKey: ['transactions', gameId] })
+      // road_works and police_checkpoint (Этап 14.6) close/reopen road_edges,
+      // so the map needs a fresh copy to show it without a manual reload.
+      void queryClient.invalidateQueries({ queryKey: ['mapData'] })
     }
     if (
       event.event === 'trade.created' ||
