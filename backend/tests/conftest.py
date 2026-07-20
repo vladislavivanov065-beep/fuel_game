@@ -21,6 +21,7 @@ from app.db.models.station_fuel import StationFuel
 from app.db.models.station_template import StationTemplate
 from app.db.models.station_upgrade import StationUpgrade
 from app.db.models.trade_offer import TradeOffer
+from app.db.models.traffic_light import TrafficLight
 from app.db.models.truck import Truck
 from app.db.models.user import User
 from app.db.models.vehicle import Vehicle
@@ -60,6 +61,7 @@ async def _wipe_database() -> None:
         await db.execute(delete(StationTemplate))
         await db.execute(delete(Refinery))
         await db.execute(delete(RoadEdge))
+        await db.execute(delete(TrafficLight))
         await db.execute(delete(RoadNode))
         await db.execute(delete(Session))
         await db.execute(delete(User))

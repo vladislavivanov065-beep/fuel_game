@@ -15,9 +15,10 @@ from app.db.models.station_fuel import FuelType, StationFuel
 from app.db.models.station_template import StationTemplate
 from app.db.models.station_upgrade import StationUpgrade, UpgradeStatus, UpgradeType
 from app.db.models.trade_offer import TradeOffer, TradeOfferStatus, TradeOfferType
+from app.db.models.traffic_light import TrafficLight
 from app.db.models.truck import Truck, TruckStatus
 from app.db.models.user import User
-from app.db.models.vehicle import DriverType, Vehicle, VehicleStatus
+from app.db.models.vehicle import DriverType, Vehicle, VehicleStatus, VehicleType
 
 __all__ = [
     "DriverType",
@@ -46,6 +47,7 @@ __all__ = [
     "TradeOffer",
     "TradeOfferStatus",
     "TradeOfferType",
+    "TrafficLight",
     "Truck",
     "TruckStatus",
     "UpgradeStatus",
@@ -53,4 +55,5 @@ __all__ = [
     "User",
     "Vehicle",
     "VehicleStatus",
+    "VehicleType",
 ]
