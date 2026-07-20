@@ -63,10 +63,17 @@ export interface InvitePreview {
   player_count: number
 }
 
-export function createGame(name: string): Promise<GameDetail> {
+export interface CreateGameSettingsOverrides {
+  vehicle_spawn_per_minute?: number
+}
+
+export function createGame(
+  name: string,
+  settings?: CreateGameSettingsOverrides,
+): Promise<GameDetail> {
   return apiRequest<GameDetail>('/api/games', {
     method: 'POST',
-    body: JSON.stringify({ name }),
+    body: JSON.stringify(settings ? { name, settings } : { name }),
   })
 }
 

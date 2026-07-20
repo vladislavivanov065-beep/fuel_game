@@ -108,6 +108,13 @@ select:focus {
   border-color: var(--accent-border);
 }
 
+input[type='range'] {
+  padding: 0;
+  border: none;
+  background: none;
+  accent-color: var(--accent-2);
+}
+
 code,
 .counter {
   font-family: var(--mono);
