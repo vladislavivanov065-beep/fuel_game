@@ -36,6 +36,18 @@ async def test_create_game_returns_lobby_with_creator(client: AsyncClient) -> No
         assert game["players"][0]["display_name"] == "Creator"
 
 
+async def test_create_game_accepts_custom_traffic_setting(client: AsyncClient) -> None:
+    async with _registered_client("traffic-setting@example.com", "Creator") as creator:
+        response = await creator.post(
+            "/api/games",
+            json={"name": "Custom Traffic", "settings": {"vehicle_spawn_per_minute": 45.0}},
+        )
+        assert response.status_code == 201
+        game = response.json()
+
+        assert game["settings"]["vehicle_spawn_per_minute"] == 45.0
+
+
 async def test_create_game_requires_authentication(client: AsyncClient) -> None:
     response = await client.post("/api/games", json={"name": "Nope"})
 
