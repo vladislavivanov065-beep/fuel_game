@@ -143,3 +143,9 @@ code {
 .vehicle-marker-emergency {
   animation: emergency-lights-pulse 0.6s infinite;
 }
+
+.vehicle-marker-typed {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}

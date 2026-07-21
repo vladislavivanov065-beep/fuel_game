@@ -1,4 +1,14 @@
 import L from 'leaflet'
+import ambulanceImg from './ambulance.png'
+import cargoTruckImg from './cargo_truck.png'
+import fireTruckImg from './fire_truck.png'
+import hatchbackImg from './hatchback.png'
+import jeepImg from './jeep.png'
+import marshrutkaImg from './marshrutka.png'
+import motorcycleImg from './motorcycle.png'
+import pickupImg from './pickup.png'
+import policeImg from './police.png'
+import trolleybusImg from './trolleybus.png'
 
 export const stationIcon = L.divIcon({
   className: 'station-marker',
@@ -21,105 +31,40 @@ export const truckIcon = L.divIcon({
   iconAnchor: [6, 6],
 })
 
+// Все картинки нарисованы на одном холсте 1024x1536 (вид сверху, нос вверх),
+// так что у всех одинаковое соотношение сторон — только высота ("длина
+// машины" в пикселях на карте) отличается по типу.
+const IMAGE_ASPECT_RATIO = 1024 / 1536
+
 interface VehicleTypeShape {
-  width: number
-  height: number
-  color: string
-  borderColor: string
-  borderRadius: string
+  src: string
+  lengthPx: number
   isEmergency: boolean
 }
 
 const VEHICLE_TYPE_SHAPES: Record<string, VehicleTypeShape> = {
-  hatchback: {
-    width: 8,
-    height: 5,
-    color: '#1976d2',
-    borderColor: '#0d3c73',
-    borderRadius: '2px',
-    isEmergency: false,
-  },
-  jeep: {
-    width: 9,
-    height: 6,
-    color: '#4a5f3a',
-    borderColor: '#28351f',
-    borderRadius: '2px',
-    isEmergency: false,
-  },
-  pickup: {
-    width: 10,
-    height: 5,
-    color: '#8d6e63',
-    borderColor: '#4e342e',
-    borderRadius: '1px',
-    isEmergency: false,
-  },
-  motorcycle: {
-    width: 5,
-    height: 3,
-    color: '#212121',
-    borderColor: '#000000',
-    borderRadius: '2px',
-    isEmergency: false,
-  },
-  marshrutka: {
-    width: 12,
-    height: 6,
-    color: '#fdd835',
-    borderColor: '#8a7000',
-    borderRadius: '1px',
-    isEmergency: false,
-  },
-  cargo_truck: {
-    width: 14,
-    height: 6,
-    color: '#6d4c41',
-    borderColor: '#3e2723',
-    borderRadius: '1px',
-    isEmergency: false,
-  },
-  trolleybus: {
-    width: 15,
-    height: 6,
-    color: '#00897b',
-    borderColor: '#004d40',
-    borderRadius: '1px',
-    isEmergency: false,
-  },
-  ambulance: {
-    width: 10,
-    height: 6,
-    color: '#f5f5f5',
-    borderColor: '#c62828',
-    borderRadius: '1px',
-    isEmergency: true,
-  },
-  police: {
-    width: 9,
-    height: 6,
-    color: '#1a237e',
-    borderColor: '#0d1450',
-    borderRadius: '2px',
-    isEmergency: true,
-  },
-  fire_truck: {
-    width: 13,
-    height: 6,
-    color: '#e53935',
-    borderColor: '#8e0000',
-    borderRadius: '1px',
-    isEmergency: true,
-  },
+  hatchback: { src: hatchbackImg, lengthPx: 20, isEmergency: false },
+  jeep: { src: jeepImg, lengthPx: 22, isEmergency: false },
+  pickup: { src: pickupImg, lengthPx: 24, isEmergency: false },
+  motorcycle: { src: motorcycleImg, lengthPx: 14, isEmergency: false },
+  marshrutka: { src: marshrutkaImg, lengthPx: 26, isEmergency: false },
+  cargo_truck: { src: cargoTruckImg, lengthPx: 30, isEmergency: false },
+  trolleybus: { src: trolleybusImg, lengthPx: 32, isEmergency: false },
+  ambulance: { src: ambulanceImg, lengthPx: 24, isEmergency: true },
+  police: { src: policeImg, lengthPx: 22, isEmergency: true },
+  fire_truck: { src: fireTruckImg, lengthPx: 30, isEmergency: true },
 }
 
 export function vehicleIconForType(vehicleType: string, heading: number): L.DivIcon {
   const shape = VEHICLE_TYPE_SHAPES[vehicleType] ?? VEHICLE_TYPE_SHAPES.hatchback
-  const size = Math.max(shape.width, shape.height) + 4
+  const height = shape.lengthPx
+  const width = Math.round(height * IMAGE_ASPECT_RATIO)
+  // Контейнер — квадрат по диагонали картинки, чтобы она не обрезалась при повороте.
+  const size = Math.ceil(Math.hypot(width, height))
   const className = shape.isEmergency ? 'vehicle-marker-typed vehicle-marker-emergency' : 'vehicle-marker-typed'
   return L.divIcon({
     className,
-    html: `<div style="width:${shape.width}px;height:${shape.height}px;background:${shape.color};border:1px solid ${shape.borderColor};border-radius:${shape.borderRadius};transform:rotate(${heading}deg);"></div>`,
+    html: `<img src="${shape.src}" alt="" style="width:${width}px;height:${height}px;transform:rotate(${heading}deg);display:block;" />`,
     iconSize: [size, size],
     iconAnchor: [size / 2, size / 2],
   })
