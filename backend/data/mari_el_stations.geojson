@@ -1,99 +1,53 @@
 {
   "type": "FeatureCollection",
-  "metadata": {
-    "description": "Placeholder seed dataset for Gas Station Wars MVP. Coordinates are placed near real settlements of the Mari El Republic, but station names and identifiers are synthetic (not scraped from OpenStreetMap). Replace with a real OSM export using the same schema when available.",
-    "source": "synthetic-seed"
-  },
   "features": [
     {
       "type": "Feature",
-      "properties": { "osm_id": "seed-1", "name": "АЗС №1 Йошкар-Ола Центр", "base_price": 3500000, "settlement": "Йошкар-Ола" },
-      "geometry": { "type": "Point", "coordinates": [47.8845, 56.6389] }
+      "properties": {
+        "osm_id": "custom-1",
+        "name": "АЗС",
+        "base_price": 3500000,
+        "settlement": ""
+      },
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          47.93183147907258,
+          56.62399028322197
+        ]
+      }
     },
     {
       "type": "Feature",
-      "properties": { "osm_id": "seed-2", "name": "АЗС №2 Йошкар-Ола Север", "base_price": 3500000, "settlement": "Йошкар-Ола" },
-      "geometry": { "type": "Point", "coordinates": [47.9012, 56.6612] }
+      "properties": {
+        "osm_id": "custom-2",
+        "name": "АЗС",
+        "base_price": 3500000,
+        "settlement": ""
+      },
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          47.9315310716629,
+          56.62402274567508
+        ]
+      }
     },
     {
       "type": "Feature",
-      "properties": { "osm_id": "seed-3", "name": "АЗС №3 Йошкар-Ола Юг", "base_price": 3500000, "settlement": "Йошкар-Ола" },
-      "geometry": { "type": "Point", "coordinates": [47.8712, 56.6155] }
-    },
-    {
-      "type": "Feature",
-      "properties": { "osm_id": "seed-4", "name": "АЗС №4 Йошкар-Ола Восток", "base_price": 3500000, "settlement": "Йошкар-Ола" },
-      "geometry": { "type": "Point", "coordinates": [47.9245, 56.6301] }
-    },
-    {
-      "type": "Feature",
-      "properties": { "osm_id": "seed-5", "name": "АЗС №5 Йошкар-Ола Запад", "base_price": 3500000, "settlement": "Йошкар-Ола" },
-      "geometry": { "type": "Point", "coordinates": [47.8501, 56.6420] }
-    },
-    {
-      "type": "Feature",
-      "properties": { "osm_id": "seed-6", "name": "АЗС №6 Волжск Центр", "base_price": 3200000, "settlement": "Волжск" },
-      "geometry": { "type": "Point", "coordinates": [48.3606, 55.8697] }
-    },
-    {
-      "type": "Feature",
-      "properties": { "osm_id": "seed-7", "name": "АЗС №7 Волжск Трасса", "base_price": 3200000, "settlement": "Волжск" },
-      "geometry": { "type": "Point", "coordinates": [48.3820, 55.8790] }
-    },
-    {
-      "type": "Feature",
-      "properties": { "osm_id": "seed-8", "name": "АЗС №8 Козьмодемьянск Центр", "base_price": 3000000, "settlement": "Козьмодемьянск" },
-      "geometry": { "type": "Point", "coordinates": [46.5667, 56.3333] }
-    },
-    {
-      "type": "Feature",
-      "properties": { "osm_id": "seed-9", "name": "АЗС №9 Козьмодемьянск Порт", "base_price": 3000000, "settlement": "Козьмодемьянск" },
-      "geometry": { "type": "Point", "coordinates": [46.5450, 56.3410] }
-    },
-    {
-      "type": "Feature",
-      "properties": { "osm_id": "seed-10", "name": "АЗС №10 Звенигово", "base_price": 3100000, "settlement": "Звенигово" },
-      "geometry": { "type": "Point", "coordinates": [48.0000, 55.9667] }
-    },
-    {
-      "type": "Feature",
-      "properties": { "osm_id": "seed-11", "name": "АЗС №11 Сернур", "base_price": 3000000, "settlement": "Сернур" },
-      "geometry": { "type": "Point", "coordinates": [49.4167, 56.9167] }
-    },
-    {
-      "type": "Feature",
-      "properties": { "osm_id": "seed-12", "name": "АЗС №12 Морки", "base_price": 2900000, "settlement": "Морки" },
-      "geometry": { "type": "Point", "coordinates": [49.4333, 56.8000] }
-    },
-    {
-      "type": "Feature",
-      "properties": { "osm_id": "seed-13", "name": "АЗС №13 Мари-Турек", "base_price": 2900000, "settlement": "Мари-Турек" },
-      "geometry": { "type": "Point", "coordinates": [49.9000, 57.1667] }
-    },
-    {
-      "type": "Feature",
-      "properties": { "osm_id": "seed-14", "name": "АЗС №14 Советский", "base_price": 3100000, "settlement": "Советский" },
-      "geometry": { "type": "Point", "coordinates": [48.2833, 56.6167] }
-    },
-    {
-      "type": "Feature",
-      "properties": { "osm_id": "seed-15", "name": "АЗС №15 Новый Торъял", "base_price": 2900000, "settlement": "Новый Торъял" },
-      "geometry": { "type": "Point", "coordinates": [48.5000, 57.0000] }
-    },
-    {
-      "type": "Feature",
-      "properties": { "osm_id": "seed-16", "name": "АЗС №16 Куженер", "base_price": 2900000, "settlement": "Куженер" },
-      "geometry": { "type": "Point", "coordinates": [49.2000, 56.9833] }
-    },
-    {
-      "type": "Feature",
-      "properties": { "osm_id": "seed-17", "name": "АЗС №17 Трасса Йошкар-Ола — Волжск", "base_price": 3300000, "settlement": "Трасса" },
-      "geometry": { "type": "Point", "coordinates": [48.1200, 56.2500] }
-    },
-    {
-      "type": "Feature",
-      "properties": { "osm_id": "seed-18", "name": "АЗС №18 Трасса Йошкар-Ола — Сернур", "base_price": 3300000, "settlement": "Трасса" },
-      "geometry": { "type": "Point", "coordinates": [48.6500, 56.7800] }
+      "properties": {
+        "osm_id": "custom-3",
+        "name": "АЗС",
+        "base_price": 3500000,
+        "settlement": ""
+      },
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          47.93174028396607,
+          56.62388994455405
+        ]
+      }
     }
   ]
 }
