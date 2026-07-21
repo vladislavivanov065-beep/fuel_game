@@ -1,5 +1,7 @@
 import json
 import random
+import resource
+import time
 import uuid
 from dataclasses import dataclass
 from decimal import Decimal
@@ -142,6 +144,30 @@ def _coordinate_key(longitude: float, latitude: float) -> tuple[float, float]:
     return (round(longitude, 6), round(latitude, 6))
 
 
+_INSERT_BATCH_SIZE = 5000
+
+
+async def _bulk_insert_in_batches(
+    db: AsyncSession,
+    table: type[RoadNode] | type[RoadEdge] | type[TrafficLight],
+    rows: list[dict[str, object]],
+) -> None:
+    # A single INSERT with all rows keeps every row dict (and SQLAlchemy's own
+    # executemany parameter buffer) alive in memory at once; for a real OSM
+    # export (tens of thousands of rows) that peak is the difference between
+    # fitting in a small deploy container and getting OOM-killed. Batching
+    # bounds peak memory regardless of how large the road file grows.
+    total_batches = (len(rows) + _INSERT_BATCH_SIZE - 1) // _INSERT_BATCH_SIZE
+    for batch_index, start in enumerate(range(0, len(rows), _INSERT_BATCH_SIZE), start=1):
+        await db.execute(insert(table), rows[start : start + _INSERT_BATCH_SIZE])
+        rss_mb = resource.getrusage(resource.RUSAGE_SELF).ru_maxrss / 1024
+        print(
+            f"[build_road_graph] {table.__tablename__} batch {batch_index}/{total_batches}, "
+            f"rss={rss_mb:.0f}MB",
+            flush=True,
+        )
+
+
 async def build_road_graph(
     db: AsyncSession, features: list[RoadSegmentFeature], *, rng: random.Random | None = None
 ) -> tuple[int, int]:
@@ -161,10 +187,16 @@ async def build_road_graph(
     so rows can be inserted without needing RETURNING to learn their id.
     """
     rng = rng or random.Random()
+    t0 = time.monotonic()
+
+    def _log(label: str) -> None:
+        # Временная диагностика зависаний деплоя на Railway (см. коммит).
+        print(f"[build_road_graph] {label}: +{time.monotonic() - t0:.1f}s", flush=True)
 
     existing_nodes = (
         await db.execute(select(RoadNode.id, RoadNode.longitude, RoadNode.latitude))
     ).all()
+    _log(f"selected {len(existing_nodes)} existing nodes")
     node_id_by_coordinate: dict[tuple[float, float], uuid.UUID] = {
         _coordinate_key(longitude, latitude): node_id
         for node_id, longitude, latitude in existing_nodes
@@ -178,11 +210,14 @@ async def build_road_graph(
                 node_id = uuid.uuid4()
                 node_id_by_coordinate[key] = node_id
                 new_node_rows.append({"id": node_id, "latitude": latitude, "longitude": longitude})
+    _log(f"computed {len(new_node_rows)} new node rows")
 
     if new_node_rows:
-        await db.execute(insert(RoadNode), new_node_rows)
+        await _bulk_insert_in_batches(db, RoadNode, new_node_rows)
+    _log("inserted new nodes")
 
     await db.execute(delete(RoadEdge))
+    _log("deleted old edges")
 
     neighbor_keys: dict[tuple[float, float], set[tuple[float, float]]] = {}
     edge_rows: list[dict[str, object]] = []
@@ -224,8 +259,11 @@ async def build_road_graph(
                     }
                 )
 
+    _log(f"computed {len(edge_rows)} edge rows")
+
     if edge_rows:
-        await db.execute(insert(RoadEdge), edge_rows)
+        await _bulk_insert_in_batches(db, RoadEdge, edge_rows)
+    _log("inserted edges")
 
     await db.execute(delete(TrafficLight))
     cycle_length = (
@@ -244,7 +282,9 @@ async def build_road_graph(
         if len(neighbors) >= MIN_INTERSECTION_DEGREE
     ]
     if light_rows:
-        await db.execute(insert(TrafficLight), light_rows)
+        await _bulk_insert_in_batches(db, TrafficLight, light_rows)
+    _log(f"inserted {len(light_rows)} traffic lights")
 
     await db.commit()
+    _log("committed")
     return len(node_id_by_coordinate), len(edge_rows)
