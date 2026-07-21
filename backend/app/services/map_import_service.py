@@ -15,6 +15,8 @@ from app.db.models.road_edge import RoadEdge
 from app.db.models.road_node import RoadNode
 from app.db.models.station_template import StationTemplate
 from app.db.models.traffic_light import TrafficLight
+from app.db.models.truck import Truck
+from app.db.models.vehicle import Vehicle
 from app.services.routing_service import haversine_km
 
 # An intersection (not a pass-through point) is a node touching at least this
@@ -215,6 +217,19 @@ async def build_road_graph(
     if new_node_rows:
         await _bulk_insert_in_batches(db, RoadNode, new_node_rows)
     _log("inserted new nodes")
+
+    # Rebuilding replaces every edge with a fresh id, so any vehicle/truck
+    # mid-route on the old graph would otherwise block this DELETE with a
+    # foreign key violation (and, if it didn't, would be left silently
+    # pointing at an id that no longer exists). Clearing them here is the
+    # honest outcome of "the road network just changed under you" — the
+    # game's own spawn logic replaces them within moments; there is no
+    # reroute-from-scratch mechanism for a fully vanished edge, only for a
+    # closed one (see _reroute_truck), so leaving current_edge_id dangling
+    # would strand them forever instead.
+    await db.execute(delete(Vehicle).where(Vehicle.current_edge_id.is_not(None)))
+    await db.execute(delete(Truck).where(Truck.current_edge_id.is_not(None)))
+    _log("cleared vehicles/trucks referencing old edges")
 
     await db.execute(delete(RoadEdge))
     _log("deleted old edges")

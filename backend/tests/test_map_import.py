@@ -1,5 +1,6 @@
 import json
 import random
+from decimal import Decimal
 from pathlib import Path
 
 from sqlalchemy import select
@@ -7,8 +8,14 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.models.road_edge import RoadEdge
 from app.db.models.road_node import RoadNode
+from app.db.models.station_fuel import FuelType
 from app.db.models.station_template import StationTemplate
 from app.db.models.traffic_light import TrafficLight
+from app.db.models.vehicle import DriverType, Vehicle
+from app.schemas.auth import RegisterRequest
+from app.schemas.game import CreateGameRequest
+from app.services.auth_service import register_user
+from app.services.game_service import create_game
 from app.services.map_import_service import (
     build_road_graph,
     parse_road_features,
@@ -231,3 +238,59 @@ async def test_build_road_graph_traffic_lights_are_rebuilt_idempotently(
 
     lights = (await db_session.execute(select(TrafficLight))).scalars().all()
     assert len(lights) == 1
+
+
+async def test_build_road_graph_clears_vehicles_on_edges_before_rebuild(
+    tmp_path: Path, db_session: AsyncSession
+) -> None:
+    # Regression test for a production incident: rebuilding the road graph
+    # unconditionally deleted all road_edges, which crashed with a foreign
+    # key violation the moment any vehicle was mid-route (a live game had
+    # been played) — see app.services.map_import_service.build_road_graph.
+    geojson_path = tmp_path / "roads.geojson"
+    _write_road_geojson(geojson_path, [_road_feature([[47.0, 56.0], [47.1, 56.1]])])
+    features = parse_road_features(geojson_path)
+    await build_road_graph(db_session, features)
+
+    edge = (await db_session.execute(select(RoadEdge))).scalars().first()
+    assert edge is not None
+
+    user, _ = await register_user(
+        db_session,
+        RegisterRequest(
+            email="roadgraph@example.com", password="correcthorsebattery", display_name="Owner"
+        ),
+    )
+    game = await create_game(db_session, user.id, CreateGameRequest(name="Road Graph Test"))
+
+    db_session.add(
+        Vehicle(
+            game_id=game.id,
+            driver_type=DriverType.RANDOM,
+            fuel_type=FuelType.AI92,
+            home_latitude=56.0,
+            home_longitude=47.0,
+            destination_latitude=56.1,
+            destination_longitude=47.1,
+            route_json={"points": []},
+            current_latitude=56.0,
+            current_longitude=47.0,
+            current_edge_id=edge.id,
+            tank_capacity_liters=Decimal("50"),
+            fuel_liters=Decimal("40"),
+            budget=Decimal("100000.00"),
+            price_sensitivity=1.0,
+            distance_sensitivity=1.0,
+            queue_sensitivity=1.0,
+            rating_sensitivity=1.0,
+        )
+    )
+    await db_session.commit()
+
+    # Would previously raise IntegrityError (ForeignKeyViolationError) here.
+    node_count, edge_count = await build_road_graph(db_session, features)
+    assert node_count == 2
+    assert edge_count == 2
+
+    remaining_vehicles = (await db_session.execute(select(Vehicle))).scalars().all()
+    assert remaining_vehicles == []
