@@ -1,8 +1,8 @@
 import { useQuery, useQueryClient } from '@tanstack/react-query'
-import { useEffect, useState } from 'react'
+import { useState } from 'react'
 import 'leaflet/dist/leaflet.css'
 import { Link, useParams } from 'react-router-dom'
-import { Circle, CircleMarker, MapContainer, Marker, Polyline, Popup, TileLayer } from 'react-leaflet'
+import { Circle, CircleMarker, MapContainer, Marker, Popup, TileLayer } from 'react-leaflet'
 import { listActiveAccidents, type RoadAccident } from '../api/accidents'
 import { ApiError } from '../api/client'
 import { type EventRegion, listActiveEvents } from '../api/events'
@@ -43,7 +43,6 @@ import {
   truckIcon,
   vehicleIconForType,
 } from '../map/icons'
-import { LIGHT_STATE_COLORS, lightStateAt } from '../map/trafficLights'
 import { useAuthStore } from '../stores/authStore'
 import { useGameSocket } from '../websocket/useGameSocket'
 
@@ -302,62 +301,6 @@ function RefineryOrderForm({
         </p>
       )}
     </div>
-  )
-}
-
-function RoadNetworkLayer({ mapData }: { mapData: MapData | undefined }) {
-  const [now, setNow] = useState(() => Date.now())
-
-  useEffect(() => {
-    const interval = setInterval(() => setNow(Date.now()), 1000)
-    return () => clearInterval(interval)
-  }, [])
-
-  if (!mapData) return null
-
-  const nodeById = new Map(mapData.road_nodes.map((node) => [node.id, node]))
-
-  return (
-    <>
-      {mapData.road_edges.map((edge) => {
-        const from = nodeById.get(edge.from_node_id)
-        const to = nodeById.get(edge.to_node_id)
-        if (!from || !to) return null
-        return (
-          <Polyline
-            key={edge.id}
-            positions={[
-              [from.latitude, from.longitude],
-              [to.latitude, to.longitude],
-            ]}
-            pathOptions={{
-              color: edge.is_closed ? '#c62828' : edge.trolleybus_wire ? '#00897b' : '#9e9e9e',
-              weight: edge.is_closed ? 3 : edge.trolleybus_wire ? 2 : 1.5,
-              dashArray: edge.is_closed ? '4 4' : undefined,
-              opacity: 0.6,
-            }}
-          />
-        )
-      })}
-      {mapData.traffic_lights.map((light) => {
-        const node = nodeById.get(light.road_node_id)
-        if (!node) return null
-        const state = lightStateAt(light, now)
-        return (
-          <CircleMarker
-            key={light.id}
-            center={[node.latitude, node.longitude]}
-            radius={4}
-            pathOptions={{
-              color: '#333',
-              weight: 1,
-              fillColor: LIGHT_STATE_COLORS[state],
-              fillOpacity: 1,
-            }}
-          />
-        )
-      })}
-    </>
   )
 }
 
@@ -703,7 +646,6 @@ export function GameMapPage() {
             attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
             url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
           />
-          <RoadNetworkLayer mapData={mapData} />
           <AccidentMarkers accidents={accidents ?? []} mapData={mapData} />
           <TruckMarkers trucks={trucks ?? []} />
           <VehicleMarkers vehicles={vehicles ?? []} />
