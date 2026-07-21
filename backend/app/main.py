@@ -1,3 +1,4 @@
+import traceback
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 
@@ -26,7 +27,15 @@ settings = get_settings()
 
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncIterator[None]:
-    await run_release_tasks()
+    try:
+        await run_release_tasks()
+    except Exception:
+        # Временная диагностика: печатаем трейсбек явно, unbuffered (см.
+        # railway.json's "python -u"), на случай если что-то выше по стеку
+        # (uvicorn/asyncio) глушит его при падении lifespan-старта.
+        print("[lifespan] run_release_tasks() failed:", flush=True)
+        traceback.print_exc()
+        raise
     scheduler.start()
     yield
     await scheduler.stop()
